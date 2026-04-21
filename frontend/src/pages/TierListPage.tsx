@@ -34,19 +34,20 @@ const TIER_HEADER_COLORS: Record<string, string> = {
 }
 
 export default function TierListPage() {
-  const { seasonId } = useActiveSeason()
+  const { seasonId, loading: seasonLoading } = useActiveSeason()
   const [pokemon, setPokemon] = useState<Pokemon[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!seasonId) return
+    if (seasonLoading) return
+    if (!seasonId) { setLoading(false); return }
     setLoading(true)
     axios.get(`/seasons/${seasonId}/pokemon`)
       .then((r) => setPokemon(r.data.filter((p: Pokemon) => p.is_legal)))
       .catch(() => setError('Failed to load Pokemon'))
       .finally(() => setLoading(false))
-  }, [seasonId])
+  }, [seasonId, seasonLoading])
 
   const byTier = pokemon.reduce<Record<string, Pokemon[]>>((acc, p) => {
     const tier = p.tier || 'Untiered'

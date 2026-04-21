@@ -40,13 +40,14 @@ export default function PokemonDatabasePage() {
   const [availabilityFilter, setAvailabilityFilter] = useState('')
 
   useEffect(() => {
-    if (!seasonId) return
+    if (seasonLoading) return
+    if (!seasonId) { setLoading(false); return }
     setLoading(true)
     axios.get(`/seasons/${seasonId}/pokemon`)
       .then((r) => setPokemon(r.data))
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [seasonId])
+  }, [seasonId, seasonLoading])
 
   const filtered = useMemo(() => {
     return pokemon.filter((p) => {
@@ -89,6 +90,9 @@ export default function PokemonDatabasePage() {
         </select>
       </div>
 
+      {!seasonId && !seasonLoading && (
+        <div className="text-center py-12" style={{ color: 'var(--color-text-muted)' }}>No active season found. Create one in the Admin panel.</div>
+      )}
       {(loading || seasonLoading) ? (
         <div className="text-center text-gray-500 py-12">Loading...</div>
       ) : (
