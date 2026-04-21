@@ -22,6 +22,7 @@ export default function PokemonTab() {
   const [saving, setSaving] = useState(false)
   const [locking, setLocking] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [applyingReg, setApplyingReg] = useState(false)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -71,6 +72,19 @@ export default function PokemonTab() {
     finally { setImporting(false); setLoading(false) }
   }
 
+  const applyRegulation = async (regulation: string) => {
+    if (!confirm(`Apply ${regulation.toUpperCase()} legality preset? This will mark Pokemon legal/illegal based on the official SV dex and cannot be easily undone.`)) return
+    setApplyingReg(true); setMsg('')
+    try {
+      const r = await axios.post(`/seasons/${sid}/pokemon/apply-regulation?regulation=${regulation}`, {}, { withCredentials: true })
+      setMsg(`${regulation.toUpperCase()} applied: ${r.data.legal} legal, ${r.data.illegal} illegal (${r.data.total_in_dex} in regulation dex)`)
+      const refresh = await axios.get(`/seasons/${sid}/pokemon`)
+      setPokemon(refresh.data)
+      setPage(0)
+    } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed to apply regulation') }
+    finally { setApplyingReg(false) }
+  }
+
   const lockTiers = async () => {
     if (!confirm('Lock tiers? This cannot be undone.')) return
     setLocking(true)
@@ -106,6 +120,9 @@ export default function PokemonTab() {
           </select>
           <button onClick={importAll} disabled={importing} className="px-3 py-1.5 rounded text-sm border" style={{ borderColor: 'var(--color-border)' }}>
             {importing ? 'Importing...' : 'Import All Pokemon'}
+          </button>
+          <button onClick={() => applyRegulation('reg-m-a')} disabled={applyingReg} className="px-3 py-1.5 rounded text-sm border" style={{ borderColor: '#3b82f6', color: '#3b82f6' }}>
+            {applyingReg ? 'Applying...' : 'Apply Reg M-A Legality'}
           </button>
           {hasEdits && (
             <button onClick={saveAll} disabled={saving} className="px-3 py-1.5 rounded text-white text-sm" style={{ background: 'var(--color-primary)' }}>

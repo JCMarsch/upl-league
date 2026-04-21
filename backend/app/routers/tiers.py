@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timezone
+import requests as http_requests
 from app.database import get_db
 from app.auth import require_admin
 from app.models.season import Season
@@ -8,6 +9,11 @@ from app.models.pokemon import SeasonPokemon, PokemonSpecies
 from app.models.user import User
 from app.schemas.pokemon import BulkPokemonUpdate, SeasonPokemonOut
 from typing import List
+
+# Regulation M-A: Pokemon available in SV (Paldea) + Teal Mask (Kitakami) + Indigo Disk (Blueberry)
+REGULATION_DEXES = {
+    "reg-m-a": ["paldea", "kitakami", "blueberry"],
+}
 
 router = APIRouter(tags=["tiers"])
 
@@ -60,6 +66,62 @@ def populate_season_pokemon(
 
     db.commit()
     return {"created": created, "total": len(all_species)}
+
+
+@router.post("/seasons/{season_id}/pokemon/apply-regulation")
+def apply_regulation(
+    season_id: int,
+    regulation: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    if regulation not in REGULATION_DEXES:
+        raise HTTPException(status_code=400, detail=f"Unknown regulation '{regulation}'. Valid: {list(REGULATION_DEXES)}")
+
+    # Fetch legal species names from PokeAPI
+    legal_species_names: set[str] = set()
+    for dex_slug in REGULATION_DEXES[regulation]:
+        try:
+            resp = http_requests.get(
+                f"https://pokeapi.co/api/v2/pokedex/{dex_slug}/",
+                timeout=15,
+            )
+            resp.raise_for_status()
+            for entry in resp.json().get("pokemon_entries", []):
+                legal_species_names.add(entry["pokemon_species"]["name"])
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch dex '{dex_slug}' from PokeAPI: {e}")
+
+    if not legal_species_names:
+        raise HTTPException(status_code=502, detail="Got empty legal list from PokeAPI — aborting")
+
+    # Apply legality to this season's pokemon
+    rows = (
+        db.query(SeasonPokemon)
+        .filter(SeasonPokemon.season_id == season_id)
+        .options(joinedload(SeasonPokemon.species))
+        .all()
+    )
+
+    legal_count = 0
+    illegal_count = 0
+    for sp in rows:
+        # Match on base species name (covers all formes of a legal species)
+        species_name = sp.species.name if sp.species else None
+        is_legal = species_name in legal_species_names if species_name else False
+        sp.is_legal = is_legal
+        if is_legal:
+            legal_count += 1
+        else:
+            illegal_count += 1
+
+    db.commit()
+    return {
+        "regulation": regulation,
+        "legal": legal_count,
+        "illegal": illegal_count,
+        "total_in_dex": len(legal_species_names),
+    }
 
 
 @router.post("/seasons/{season_id}/pokemon/bulk-update")
