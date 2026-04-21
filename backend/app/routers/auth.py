@@ -5,6 +5,7 @@ from app.models.user import User
 from app.security import hash_password, verify_password
 from app.auth import create_access_token, get_current_user, require_admin
 from app.schemas.auth import UserCreate, UserLogin, UserOut, Token
+from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -45,7 +46,8 @@ def signup(data: UserCreate, response: Response, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     token = create_access_token({"sub": str(user.id)})
-    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 7)
+    is_prod = settings.environment == "production"
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", secure=is_prod, max_age=60 * 60 * 24 * 7)
     return user
 
 
@@ -55,11 +57,13 @@ def login(data: UserLogin, response: Response, db: Session = Depends(get_db)):
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token({"sub": str(user.id)})
+    is_prod = settings.environment == "production"
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
         samesite="lax",
+        secure=is_prod,
         max_age=60 * 60 * 24 * 7,
     )
     return {"message": "Login successful", "user": UserOut.model_validate(user)}

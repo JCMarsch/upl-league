@@ -16,6 +16,7 @@ import HistoryPage from './pages/HistoryPage'
 import SeasonHistoryPage from './pages/SeasonHistoryPage'
 import ManagerPage from './pages/ManagerPage'
 import NotificationsPage from './pages/NotificationsPage'
+import TeamsListPage from './pages/TeamsListPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 
@@ -63,6 +64,7 @@ function App() {
         <Route path="/schedule" element={<Layout><SchedulePage /></Layout>} />
         <Route path="/matches/:matchId" element={<Layout><MatchPage /></Layout>} />
         <Route path="/teams/:teamId" element={<Layout><TeamPage /></Layout>} />
+        <Route path="/teams" element={<Layout><TeamsListPage /></Layout>} />
         <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
         <Route path="/history/:seasonId" element={<Layout><SeasonHistoryPage /></Layout>} />
         <Route path="/managers/:userId" element={<Layout><ManagerPage /></Layout>} />

@@ -52,7 +52,8 @@ export default function PokemonTab() {
     try {
       const r = await axios.post(`/seasons/${sid}/pokemon/populate`, {}, { withCredentials: true })
       setMsg(`Imported ${r.data.created} Pokemon (${r.data.total} total)`)
-      axios.get(`/seasons/${sid}/pokemon`).then(r => setPokemon(r.data))
+      const refresh = await axios.get(`/seasons/${sid}/pokemon`)
+      setPokemon(refresh.data)
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
     finally { setImporting(false) }
   }

@@ -19,7 +19,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
-  loading: false,
+  loading: true,
 
   login: async (username, password) => {
     const resp = await axios.post('/auth/login', { username, password }, { withCredentials: true })

@@ -43,6 +43,7 @@ export default function NavBar() {
       {/* Desktop nav */}
       <div className="hidden md:flex items-center gap-6 text-sm">
         <Link to="/standings" className="hover:underline">Standings</Link>
+        <Link to="/teams" className="hover:underline">Teams</Link>
         <Link to="/tier-list" className="hover:underline">Tier List</Link>
         <Link to="/pokemon" className="hover:underline">Pokemon</Link>
         <Link to="/schedule" className="hover:underline">Schedule</Link>
@@ -88,9 +89,13 @@ export default function NavBar() {
               )}
             </Link>
 
-            <span className="text-sm hidden md:inline" style={{ color: 'var(--color-text-muted)' }}>
+            <Link
+              to={`/managers/${user.id}`}
+              className="text-sm hidden md:inline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               {user.username}
-            </span>
+            </Link>
             <button
               onClick={handleLogout}
               className="text-xs px-3 py-1.5 rounded border hover:opacity-70"
@@ -129,6 +134,7 @@ export default function NavBar() {
         >
           {[
             { to: '/standings', label: 'Standings' },
+            { to: '/teams', label: 'Teams' },
             { to: '/tier-list', label: 'Tier List' },
             { to: '/pokemon', label: 'Pokemon' },
             { to: '/schedule', label: 'Schedule' },
@@ -137,6 +143,7 @@ export default function NavBar() {
               { to: '/draft', label: 'Draft' },
               { to: '/transactions', label: 'Transactions' },
               { to: '/notifications', label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
+              { to: `/managers/${user.id}`, label: 'My Career' },
             ] : []),
             ...(user && (user.roles.includes('admin') || user.roles.includes('superadmin')) ? [
               { to: '/admin', label: 'Admin' },
