@@ -1,0 +1,6 @@
+{
+  "id": "gen9vgc2025-passive",
+  "format": "gen9vgc2025",
+  "players": ["Player1", "Player2"],
+  "log": "|player|p1|Player1|1|\n|player|p2|Player2|1|\n|teamsize|p1|6\n|teamsize|p2|6\n|gametype|doubles\n|gen|9\n|clearpoke\n|poke|p1|Toxapex, M|item\n|poke|p1|Corviknight, M|item\n|poke|p1|Armarouge, M|item\n|poke|p1|Hydreigon, M|item\n|poke|p1|Garganacl, M|item\n|poke|p1|Talonflame, M|item\n|poke|p2|Pikachu, M|item\n|poke|p2|Charizard, M|item\n|poke|p2|Squirtle, M|item\n|poke|p2|Bulbasaur, M|item\n|poke|p2|Mewtwo, M|item\n|poke|p2|Eevee, M|item\n|start\n|switch|p1a: Toxapex|Toxapex, M|200/200\n|switch|p1b: Corviknight|Corviknight, M|342/342\n|switch|p2a: Pikachu|Pikachu, M|175/175\n|switch|p2b: Charizard|Charizard, M|297/297\n|turn|1\n|move|p1a: Toxapex|Toxic|p2a: Pikachu\n|-status|p2a: Pikachu|tox\n|move|p2a: Pikachu|Thunderbolt|p1a: Toxapex\n|turn|2\n|-damage|p2a: Pikachu|100/175 tox\n|move|p1a: Toxapex|Scald|p2a: Pikachu\n|-damage|p2a: Pikachu|50/175 tox\n|turn|3\n|-damage|p2a: Pikachu|1/175 tox\n|-damage|p2a: Pikachu|0 fnt\n|faint|p2a: Pikachu\n|win|Player1"
+}
