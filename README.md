@@ -78,86 +78,139 @@ cd frontend && npm run test
 
 ## Deploying to Railway
 
-### Step 1 — Push your code to GitHub
+### Step 1 — Create a Railway account and new project
 
-Make sure the repo is on GitHub (public or private, doesn't matter).
+1. Go to [railway.app](https://railway.app) and sign in (GitHub login works).
+2. Click **New Project**.
+3. Choose **Deploy from GitHub repo**.
+4. Authorize Railway to access your GitHub if prompted, then select **JCMarsch/upl-league**.
+5. Railway will show you a service card. **Do not deploy yet** — you need to add a database and set variables first.
 
-### Step 2 — Create a Railway project
+---
 
-1. Go to [railway.app](https://railway.app) and sign in.
-2. Click **New Project → Deploy from GitHub repo** and select this repo.
-3. Railway will detect `railway.toml` and configure the build automatically. Don't click Deploy yet.
+### Step 2 — Add a Postgres database
 
-### Step 3 — Add a Postgres database
+1. In your project dashboard, click the **+ New** button (top right).
+2. Select **Database** → **Add PostgreSQL**.
+3. Railway will create a Postgres service. Wait a few seconds for it to appear in the dashboard.
 
-1. In your Railway project, click **+ New** → **Database** → **PostgreSQL**.
-2. Once it provisions, click the Postgres service → **Connect** tab.
-3. Copy the **DATABASE_URL** shown there. It will look like:
+---
+
+### Step 3 — Get your database connection string
+
+1. Click on the **Postgres service** (the purple card).
+2. Go to the **Variables** tab.
+3. Find the variable called `DATABASE_URL`. Click the copy icon next to it.
+4. It will look something like this:
    ```
-   postgresql://user:pass@host.railway.internal:5432/railway
+   postgresql://postgres:abc123@roundhouse.proxy.rlwy.net:12345/railway
    ```
-4. Change `postgresql://` to `postgresql+pg8000://` (required — this app uses the pg8000 driver):
+5. You need to change `postgresql://` to `postgresql+pg8000://`. So the final string you'll use is:
    ```
-   postgresql+pg8000://user:pass@host.railway.internal:5432/railway
+   postgresql+pg8000://postgres:abc123@roundhouse.proxy.rlwy.net:12345/railway
    ```
+   (just swap the prefix — everything after `://` stays exactly the same)
 
-### Step 4 — Set environment variables
+---
 
-In your Railway project, click your **web service** → **Variables** tab → **Raw Editor** and paste:
+### Step 4 — Generate a secret key
 
-```
-DATABASE_URL=postgresql+pg8000://user:pass@host.railway.internal:5432/railway
-SECRET_KEY=<generate one: python -c "import secrets; print(secrets.token_hex(32))">
-ALLOWED_ORIGINS=https://<your-railway-app>.up.railway.app
-ENVIRONMENT=production
-```
-
-Optional (for email/Discord notifications):
-```
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-```
-
-### Step 5 — Deploy
-
-Click **Deploy** (or push a commit — Railway redeploys on every push to `main`).
-
-The build will:
-1. Build the React frontend → `frontend/dist/`
-2. Install Python dependencies
-3. Run `alembic upgrade head` (database migrations)
-4. Start the FastAPI server, which also serves the frontend
-
-You can watch the build logs in real time in the Railway dashboard.
-
-### Step 6 — First-time setup (run once after deploy)
-
-Install the Railway CLI if you haven't: `npm install -g @railway/cli`
-
+Open a terminal on your computer and run:
 ```bash
-# Log in to Railway CLI
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+Copy the output — it will be a long string of random letters and numbers. This is your `SECRET_KEY`.
+
+If you don't have Python locally, you can use any random string generator online to make a 64-character random string.
+
+---
+
+### Step 5 — Set environment variables on the web service
+
+1. In your Railway project, click on the **web service card** (the one connected to your GitHub repo, not the Postgres one).
+2. Click the **Variables** tab.
+3. You will see a form with **Name** and **Value** fields. Add each variable below one at a time by typing the name, pasting the value, and clicking **Add**.
+
+Add these variables:
+
+| Name | Value |
+|------|-------|
+| `DATABASE_URL` | Your modified connection string from Step 3 (the one starting with `postgresql+pg8000://`) |
+| `SECRET_KEY` | The random string you generated in Step 4 |
+| `ENVIRONMENT` | `production` |
+| `ALLOWED_ORIGINS` | Leave this for now — you'll fill it in after Step 6 |
+
+---
+
+### Step 6 — Generate your public URL
+
+1. Still on the web service, click the **Settings** tab.
+2. Scroll down to **Networking**.
+3. Click **Generate Domain**.
+4. Railway will give you a URL like `https://upl-league-production.up.railway.app`. Copy it.
+5. Go back to the **Variables** tab and add:
+
+| Name | Value |
+|------|-------|
+| `ALLOWED_ORIGINS` | Your full URL from above, e.g. `https://upl-league-production.up.railway.app` |
+
+---
+
+### Step 7 — Deploy
+
+1. Click the **Deploy** button on your web service.
+2. Click **View Logs** to watch the build. It will take 2–4 minutes the first time.
+3. You should see it run through: installing Node packages, building the frontend, installing Python packages, running database migrations, then starting the server.
+4. When you see `Application startup complete` in the logs, the app is live.
+
+If the build fails, the logs will show exactly which step errored. The most common issue is the `DATABASE_URL` prefix — double-check it starts with `postgresql+pg8000://`.
+
+---
+
+### Step 8 — Create your superadmin account (run once)
+
+The easiest way is via the Railway dashboard:
+
+1. Click on your web service → **Settings** tab → scroll to **Deploy** section.
+2. Find the **Custom Start Command** field and temporarily replace it with:
+   ```
+   cd backend && python scripts/create_superadmin.py
+   ```
+3. Redeploy, then watch the logs — it will prompt for a username/email/password but you can't type interactively this way.
+
+**Easier alternative — use the Railway CLI:**
+```bash
+# Install Railway CLI
+npm install -g @railway/cli
+
+# Log in
 railway login
 
-# Link to your project (run from the repo root)
-railway link
+# From inside the upl-league folder:
+railway link       # select your project when prompted
+railway shell      # opens a shell inside your deployed service
 
-# Create the superadmin account
-railway run --service <your-service-name> python backend/scripts/create_superadmin.py
-
-# Seed Pokemon data (pulls from PokeAPI — takes ~2-3 minutes)
-railway run --service <your-service-name> python backend/scripts/seed_pokemon.py
+# Then inside the shell:
+cd backend && python scripts/create_superadmin.py
 ```
 
-Then visit your Railway URL, log in as superadmin, and create your first season from the Admin panel.
+After creating your superadmin, restore the original start command in Settings (or just redeploy from GitHub — Railway will pick up `railway.toml` again).
 
-### Finding your app URL
+---
 
-In the Railway dashboard: click your web service → **Settings** → **Networking** → **Generate Domain**. This gives you a `https://<name>.up.railway.app` URL.
+### Step 9 — Seed Pokemon data (run once)
 
-> Remember to add that URL to the `ALLOWED_ORIGINS` variable (Step 4).
+In the Railway shell (same as above):
+```bash
+cd backend && python scripts/seed_pokemon.py
+```
+This fetches Pokemon data from PokeAPI and takes 2–3 minutes.
+
+---
+
+### You're live
+
+Visit your Railway URL, log in as superadmin, and go to the **Admin** panel to create your first season.
 
 ---
 
