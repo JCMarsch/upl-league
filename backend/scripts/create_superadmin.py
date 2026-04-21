@@ -31,7 +31,7 @@ def main():
         user = User(
             username=username,
             email=email,
-            hashed_password=hash_password(password),
+            password_hash=hash_password(password),
             roles="superadmin,admin",
         )
         db.add(user)
