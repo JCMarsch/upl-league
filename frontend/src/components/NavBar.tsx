@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
 import logo from '../assets/APL_Logo.png'
@@ -8,12 +9,31 @@ export default function NavBar() {
   const { user, logout } = useAuthStore()
   const { theme, setTheme } = useThemeStore()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const navigate = useNavigate()
 
   const themes = ['light', 'dark', 'pokemon'] as const
 
+  useEffect(() => {
+    if (!user) { setUnreadCount(0); return }
+    const fetchCount = () => {
+      axios.get('/notifications/unread-count', { withCredentials: true })
+        .then(r => setUnreadCount(r.data.count))
+        .catch(() => {})
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 60000)
+    return () => clearInterval(interval)
+  }, [user])
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
+
   return (
     <nav
-      className="w-full px-4 py-3 flex items-center justify-between border-b"
+      className="w-full px-4 py-3 flex items-center justify-between border-b relative"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
     >
       <Link to="/" className="flex items-center gap-2">
@@ -26,6 +46,7 @@ export default function NavBar() {
         <Link to="/tier-list" className="hover:underline">Tier List</Link>
         <Link to="/pokemon" className="hover:underline">Pokemon</Link>
         <Link to="/schedule" className="hover:underline">Schedule</Link>
+        <Link to="/history" className="hover:underline">History</Link>
         {user && (
           <>
             <Link to="/draft" className="hover:underline">Draft</Link>
@@ -33,7 +54,7 @@ export default function NavBar() {
           </>
         )}
         {user && (user.roles.includes('admin') || user.roles.includes('superadmin')) && (
-          <Link to="/admin" className="hover:underline font-semibold text-red-600">Admin</Link>
+          <Link to="/admin" className="hover:underline font-semibold" style={{ color: '#ef4444' }}>Admin</Link>
         )}
       </div>
 
@@ -41,7 +62,7 @@ export default function NavBar() {
         {/* Theme toggle */}
         <select
           value={theme}
-          onChange={(e) => setTheme(e.target.value as typeof theme)}
+          onChange={(e) => setTheme(e.target.value as typeof themes[number])}
           className="text-xs border rounded px-2 py-1"
           style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
         >
@@ -52,12 +73,27 @@ export default function NavBar() {
 
         {user ? (
           <div className="flex items-center gap-2">
+            {/* Notification bell */}
+            <Link to="/notifications" className="relative p-1.5 rounded hover:opacity-70" title="Notifications">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 text-xs text-white rounded-full w-4 h-4 flex items-center justify-center font-bold"
+                  style={{ background: 'var(--color-primary)', fontSize: '10px' }}
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </Link>
+
             <span className="text-sm hidden md:inline" style={{ color: 'var(--color-text-muted)' }}>
               {user.username}
             </span>
             <button
-              onClick={logout}
-              className="text-xs px-3 py-1.5 rounded border hover:bg-gray-100"
+              onClick={handleLogout}
+              className="text-xs px-3 py-1.5 rounded border hover:opacity-70"
               style={{ borderColor: 'var(--color-border)' }}
             >
               Logout
@@ -80,7 +116,7 @@ export default function NavBar() {
           aria-label="Toggle menu"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={menuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
           </svg>
         </button>
       </div>
@@ -88,14 +124,34 @@ export default function NavBar() {
       {/* Mobile menu */}
       {menuOpen && (
         <div
-          className="absolute top-14 left-0 right-0 z-50 border-b md:hidden flex flex-col gap-2 px-4 py-3"
+          className="absolute top-full left-0 right-0 z-50 border-b md:hidden flex flex-col gap-1 px-4 py-3"
           style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
         >
-          <Link to="/standings" onClick={() => setMenuOpen(false)}>Standings</Link>
-          <Link to="/tier-list" onClick={() => setMenuOpen(false)}>Tier List</Link>
-          <Link to="/pokemon" onClick={() => setMenuOpen(false)}>Pokemon</Link>
-          <Link to="/schedule" onClick={() => setMenuOpen(false)}>Schedule</Link>
-          {user && <Link to="/draft" onClick={() => setMenuOpen(false)}>Draft</Link>}
+          {[
+            { to: '/standings', label: 'Standings' },
+            { to: '/tier-list', label: 'Tier List' },
+            { to: '/pokemon', label: 'Pokemon' },
+            { to: '/schedule', label: 'Schedule' },
+            { to: '/history', label: 'History' },
+            ...(user ? [
+              { to: '/draft', label: 'Draft' },
+              { to: '/transactions', label: 'Transactions' },
+              { to: '/notifications', label: `Notifications${unreadCount > 0 ? ` (${unreadCount})` : ''}` },
+            ] : []),
+            ...(user && (user.roles.includes('admin') || user.roles.includes('superadmin')) ? [
+              { to: '/admin', label: 'Admin' },
+            ] : []),
+          ].map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className="py-2 px-1 border-b last:border-0 text-sm"
+              style={{ borderColor: 'var(--color-border)' }}
+              onClick={() => setMenuOpen(false)}
+            >
+              {link.label}
+            </Link>
+          ))}
         </div>
       )}
     </nav>

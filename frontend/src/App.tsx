@@ -2,11 +2,20 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import NavBar from './components/NavBar'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 import TierListPage from './pages/TierListPage'
 import PokemonDatabasePage from './pages/PokemonDatabasePage'
 import AdminPage from './pages/AdminPage'
-import RegisterPage from './pages/RegisterPage'
+import StandingsPage from './pages/StandingsPage'
+import SchedulePage from './pages/SchedulePage'
+import MatchPage from './pages/MatchPage'
+import TransactionsPage from './pages/TransactionsPage'
 import TeamPage from './pages/TeamPage'
+import DraftPage from './pages/DraftPage'
+import HistoryPage from './pages/HistoryPage'
+import SeasonHistoryPage from './pages/SeasonHistoryPage'
+import ManagerPage from './pages/ManagerPage'
+import NotificationsPage from './pages/NotificationsPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 
@@ -42,17 +51,31 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public auth pages (no layout) */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+
+        {/* Public pages */}
         <Route path="/" element={<Layout><Home /></Layout>} />
+        <Route path="/standings" element={<Layout><StandingsPage /></Layout>} />
         <Route path="/tier-list" element={<Layout><TierListPage /></Layout>} />
         <Route path="/pokemon" element={<Layout><PokemonDatabasePage /></Layout>} />
-        <Route path="/standings" element={<Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Standings coming soon</div></Layout>} />
-        <Route path="/schedule" element={<Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Schedule coming soon</div></Layout>} />
-        <Route path="/draft" element={<ProtectedRoute><Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Draft room coming soon</div></Layout></ProtectedRoute>} />
-        <Route path="/transactions" element={<ProtectedRoute><Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Transactions coming soon</div></Layout></ProtectedRoute>} />
+        <Route path="/schedule" element={<Layout><SchedulePage /></Layout>} />
+        <Route path="/matches/:matchId" element={<Layout><MatchPage /></Layout>} />
         <Route path="/teams/:teamId" element={<Layout><TeamPage /></Layout>} />
+        <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
+        <Route path="/history/:seasonId" element={<Layout><SeasonHistoryPage /></Layout>} />
+        <Route path="/managers/:userId" element={<Layout><ManagerPage /></Layout>} />
+
+        {/* Protected pages (login required) */}
+        <Route path="/draft" element={<ProtectedRoute><Layout><DraftPage /></Layout></ProtectedRoute>} />
+        <Route path="/transactions" element={<ProtectedRoute><Layout><TransactionsPage /></Layout></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute><Layout><NotificationsPage /></Layout></ProtectedRoute>} />
+
+        {/* Admin only */}
         <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><Layout><AdminPage /></Layout></ProtectedRoute>} />
+
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
