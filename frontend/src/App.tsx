@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import TierListPage from './pages/TierListPage'
 import PokemonDatabasePage from './pages/PokemonDatabasePage'
 import AdminPage from './pages/AdminPage'
+import RegisterPage from './pages/RegisterPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 
@@ -41,6 +42,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Layout><Home /></Layout>} />
         <Route path="/tier-list" element={<Layout><TierListPage /></Layout>} />
         <Route path="/pokemon" element={<Layout><PokemonDatabasePage /></Layout>} />
