@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timezone
-import requests as http_requests
 from app.database import get_db
 from app.auth import require_admin
 from app.models.season import Season
@@ -10,9 +9,57 @@ from app.models.user import User
 from app.schemas.pokemon import BulkPokemonUpdate, SeasonPokemonOut
 from typing import List
 
-# Regulation M-A: Pokemon available in SV (Paldea) + Teal Mask (Kitakami) + Indigo Disk (Blueberry)
-REGULATION_DEXES = {
-    "reg-m-a": ["paldea", "kitakami", "blueberry"],
+# Pokemon Champions Regulation M-A legal species (base species names matching PokeAPI slugs)
+# Source: https://www.serebii.net/pokedex-champions/
+# Mega evolutions of these species are automatically legal via the name-matching logic
+REG_M_A_LEGAL: set[str] = {
+    # Kanto
+    "venusaur", "charizard", "blastoise", "beedrill", "pidgeot", "arbok",
+    "pikachu", "raichu", "clefable", "ninetales", "arcanine", "alakazam",
+    "machamp", "victreebel", "slowbro", "gengar", "kangaskhan", "starmie",
+    "pinsir", "tauros", "gyarados", "ditto", "vaporeon", "jolteon", "flareon",
+    "aerodactyl", "snorlax", "dragonite",
+    # Johto
+    "meganium", "typhlosion", "feraligatr", "ariados", "ampharos", "azumarill",
+    "politoed", "espeon", "umbreon", "slowking", "forretress", "steelix",
+    "scizor", "heracross", "skarmory", "houndoom", "tyranitar",
+    # Hoenn
+    "pelipper", "gardevoir", "sableye", "aggron", "medicham", "manectric",
+    "sharpedo", "camerupt", "torkoal", "altaria", "milotic", "castform",
+    "banette", "chimecho", "absol", "glalie",
+    # Sinnoh
+    "torterra", "infernape", "empoleon", "luxray", "roserade", "rampardos",
+    "bastiodon", "lopunny", "spiritomb", "garchomp", "lucario", "hippowdon",
+    "toxicroak", "abomasnow", "weavile", "rhyperior", "leafeon", "glaceon",
+    "gliscor", "mamoswine", "gallade", "froslass", "rotom",
+    # Unova
+    "serperior", "emboar", "samurott", "watchog", "liepard", "simisage",
+    "simisear", "simipour", "excadrill", "audino", "conkeldurr", "whimsicott",
+    "krookodile", "cofagrigus", "garbodor", "zoroark", "reuniclus", "vanilluxe",
+    "emolga", "chandelure", "beartic", "stunfisk", "golurk", "hydreigon", "volcarona",
+    # Kalos
+    "chesnaught", "delphox", "greninja", "diggersby", "talonflame", "vivillon",
+    "floette", "florges", "pangoro", "furfrou", "meowstic", "aegislash",
+    "aromatisse", "slurpuff", "clawitzer", "heliolisk", "tyrantrum", "aurorus",
+    "sylveon", "hawlucha", "dedenne", "goodra", "klefki", "trevenant",
+    "gourgeist", "avalugg", "noivern",
+    # Alola
+    "decidueye", "incineroar", "primarina", "toucannon", "crabominable",
+    "lycanroc", "toxapex", "mudsdale", "araquanid", "salazzle", "tsareena",
+    "oranguru", "passimian", "mimikyu", "drampa", "kommo-o",
+    # Galar / Hisui
+    "corviknight", "flapple", "appletun", "sandaconda", "polteageist",
+    "hatterene", "mr-rime", "runerigus", "alcremie", "morpeko", "dragapult",
+    "wyrdeer", "kleavor", "basculegion", "sneasler",
+    # Paldea
+    "meowscarada", "skeledirge", "quaquaval", "maushold", "garganacl",
+    "armarouge", "ceruledge", "bellibolt", "scovillain", "espathra",
+    "tinkaton", "palafin", "orthworm", "glimmora", "farigiraf", "kingambit",
+    "sinistcha", "archaludon", "hydrapple",
+}
+
+REGULATION_LEGAL: dict[str, set[str]] = {
+    "reg-m-a": REG_M_A_LEGAL,
 }
 
 router = APIRouter(tags=["tiers"])
@@ -75,27 +122,11 @@ def apply_regulation(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    if regulation not in REGULATION_DEXES:
-        raise HTTPException(status_code=400, detail=f"Unknown regulation '{regulation}'. Valid: {list(REGULATION_DEXES)}")
+    if regulation not in REGULATION_LEGAL:
+        raise HTTPException(status_code=400, detail=f"Unknown regulation '{regulation}'. Valid: {list(REGULATION_LEGAL)}")
 
-    # Fetch legal species names from PokeAPI
-    legal_species_names: set[str] = set()
-    for dex_slug in REGULATION_DEXES[regulation]:
-        try:
-            resp = http_requests.get(
-                f"https://pokeapi.co/api/v2/pokedex/{dex_slug}/",
-                timeout=15,
-            )
-            resp.raise_for_status()
-            for entry in resp.json().get("pokemon_entries", []):
-                legal_species_names.add(entry["pokemon_species"]["name"])
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Failed to fetch dex '{dex_slug}' from PokeAPI: {e}")
+    legal_species_names = REGULATION_LEGAL[regulation]
 
-    if not legal_species_names:
-        raise HTTPException(status_code=502, detail="Got empty legal list from PokeAPI — aborting")
-
-    # Apply legality to this season's pokemon
     rows = (
         db.query(SeasonPokemon)
         .filter(SeasonPokemon.season_id == season_id)
@@ -106,7 +137,7 @@ def apply_regulation(
     legal_count = 0
     illegal_count = 0
     for sp in rows:
-        # Match on base species name (covers all formes of a legal species)
+        # Match on base species name — covers all formes/megas of a legal species
         species_name = sp.species.name if sp.species else None
         is_legal = species_name in legal_species_names if species_name else False
         sp.is_legal = is_legal
@@ -120,7 +151,7 @@ def apply_regulation(
         "regulation": regulation,
         "legal": legal_count,
         "illegal": illegal_count,
-        "total_in_dex": len(legal_species_names),
+        "total_in_regulation": len(legal_species_names),
     }
 
 
