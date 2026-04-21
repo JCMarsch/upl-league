@@ -34,19 +34,7 @@ def configure_logging():
 
 configure_logging()
 
-from contextlib import asynccontextmanager
-from app.database import engine, Base
-from app.models import *  # noqa: ensure all models are registered
-
-
-@asynccontextmanager
-async def lifespan(app):
-    if settings.environment == "production":
-        Base.metadata.create_all(bind=engine)
-    yield
-
-
-app = FastAPI(title="UPL API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="UPL API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

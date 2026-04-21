@@ -24,4 +24,4 @@ COPY backend/ ./backend/
 
 EXPOSE 8000
 
-CMD cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
