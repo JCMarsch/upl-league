@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import datetime, timezone
 from app.database import get_db
 from app.auth import require_admin
@@ -14,10 +14,15 @@ router = APIRouter(tags=["tiers"])
 
 @router.get("/seasons/{season_id}/pokemon", response_model=List[SeasonPokemonOut])
 def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
-    rows = db.query(SeasonPokemon).filter(SeasonPokemon.season_id == season_id).all()
-    result = []
-    for sp in rows:
-        out = SeasonPokemonOut(
+    rows = (
+        db.query(SeasonPokemon)
+        .filter(SeasonPokemon.season_id == season_id)
+        .options(joinedload(SeasonPokemon.species))
+        .order_by(SeasonPokemon.species_id)
+        .all()
+    )
+    return [
+        SeasonPokemonOut(
             id=sp.id,
             season_id=sp.season_id,
             species_id=sp.species_id,
@@ -30,8 +35,8 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
             species_type1=sp.species.type1 if sp.species else None,
             species_type2=sp.species.type2 if sp.species else None,
         )
-        result.append(out)
-    return result
+        for sp in rows
+    ]
 
 
 @router.post("/seasons/{season_id}/pokemon/populate")
