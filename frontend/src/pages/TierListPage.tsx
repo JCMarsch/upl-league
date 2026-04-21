@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { useActiveSeason } from '../hooks/useActiveSeason'
 
 interface Pokemon {
   id: number
@@ -33,12 +34,13 @@ const TIER_HEADER_COLORS: Record<string, string> = {
 }
 
 export default function TierListPage() {
+  const { seasonId } = useActiveSeason()
   const [pokemon, setPokemon] = useState<Pokemon[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [seasonId, setSeasonId] = useState(1)
 
   useEffect(() => {
+    if (!seasonId) return
     setLoading(true)
     axios.get(`/seasons/${seasonId}/pokemon`)
       .then((r) => setPokemon(r.data.filter((p: Pokemon) => p.is_legal)))

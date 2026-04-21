@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
+import { useActiveSeason } from '../hooks/useActiveSeason'
 
 interface Pokemon {
   id: number
@@ -30,6 +31,7 @@ const TypeBadge = ({ type }: { type: string }) => (
 )
 
 export default function PokemonDatabasePage() {
+  const { seasonId, loading: seasonLoading } = useActiveSeason()
   const [pokemon, setPokemon] = useState<Pokemon[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -38,11 +40,13 @@ export default function PokemonDatabasePage() {
   const [availabilityFilter, setAvailabilityFilter] = useState('')
 
   useEffect(() => {
-    axios.get('/seasons/1/pokemon')
+    if (!seasonId) return
+    setLoading(true)
+    axios.get(`/seasons/${seasonId}/pokemon`)
       .then((r) => setPokemon(r.data))
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [seasonId])
 
   const filtered = useMemo(() => {
     return pokemon.filter((p) => {
@@ -85,7 +89,7 @@ export default function PokemonDatabasePage() {
         </select>
       </div>
 
-      {loading ? (
+      {(loading || seasonLoading) ? (
         <div className="text-center text-gray-500 py-12">Loading...</div>
       ) : (
         <div className="overflow-x-auto">

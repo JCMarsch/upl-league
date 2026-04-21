@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useThemeStore } from '../store/themeStore'
+import logo from '../assets/APL_Logo.png'
 
 export default function NavBar() {
   const { user, logout } = useAuthStore()
@@ -15,8 +16,8 @@ export default function NavBar() {
       className="w-full px-4 py-3 flex items-center justify-between border-b"
       style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
     >
-      <Link to="/" className="font-bold text-xl" style={{ color: 'var(--color-primary)' }}>
-        UPL
+      <Link to="/" className="flex items-center gap-2">
+        <img src={logo} alt="UPL Logo" className="h-8 w-auto" />
       </Link>
 
       {/* Desktop nav */}
