@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import TierListPage from './pages/TierListPage'
 import PokemonDatabasePage from './pages/PokemonDatabasePage'
+import AdminPage from './pages/AdminPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 
@@ -47,7 +48,7 @@ function App() {
         <Route path="/schedule" element={<Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Schedule coming soon</div></Layout>} />
         <Route path="/draft" element={<ProtectedRoute><Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Draft room coming soon</div></Layout></ProtectedRoute>} />
         <Route path="/transactions" element={<ProtectedRoute><Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Transactions coming soon</div></Layout></ProtectedRoute>} />
-        <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><Layout><div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Admin panel coming soon</div></Layout></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><Layout><AdminPage /></Layout></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

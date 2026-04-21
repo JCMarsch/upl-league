@@ -47,8 +47,9 @@ class Trade(Base):
     season_id = Column(Integer, ForeignKey("seasons.id"), nullable=False, index=True)
     proposed_by_team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
     proposed_to_team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
-    status = Column(String, default="pending")  # pending/voting/approved/denied/cancelled
+    status = Column(String, default="pending")  # pending/voting/approved/denied/cancelled/executed
     proposed_at = Column(DateTime(timezone=True), server_default=func.now())
+    approved_at = Column(DateTime(timezone=True), nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     effective_week = Column(Integer, nullable=True)
     notes = Column(String, nullable=True)

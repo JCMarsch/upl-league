@@ -13,6 +13,7 @@ pydantic-settings>=2.2.1
 requests>=2.31.0
 websockets>=12.0
 aiofiles>=23.2.1
+apscheduler>=3.10.4
 
 # Testing
 pytest>=8.2.0

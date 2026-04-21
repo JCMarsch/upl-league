@@ -253,6 +253,7 @@ def vote_on_trade(
 
     if current_approvals >= majority:
         trade.status = "approved"
+        trade.approved_at = datetime.now(timezone.utc)
     elif current_denials >= majority:
         trade.status = "denied"
 
