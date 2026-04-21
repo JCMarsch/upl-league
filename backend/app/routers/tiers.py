@@ -34,6 +34,29 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
     return result
 
 
+@router.post("/seasons/{season_id}/pokemon/populate")
+def populate_season_pokemon(
+    season_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    all_species = db.query(PokemonSpecies).all()
+    existing_ids = {sp.species_id for sp in db.query(SeasonPokemon).filter(SeasonPokemon.season_id == season_id).all()}
+
+    created = 0
+    for species in all_species:
+        if species.id not in existing_ids:
+            db.add(SeasonPokemon(season_id=season_id, species_id=species.id, is_legal=True))
+            created += 1
+
+    db.commit()
+    return {"created": created, "total": len(all_species)}
+
+
 @router.post("/seasons/{season_id}/pokemon/bulk-update")
 def bulk_update_pokemon(
     season_id: int,

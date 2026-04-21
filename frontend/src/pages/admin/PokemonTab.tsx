@@ -17,6 +17,7 @@ export default function PokemonTab() {
   const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [locking, setLocking] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -43,6 +44,17 @@ export default function PokemonTab() {
       axios.get(`/seasons/${sid}/pokemon`).then(r => setPokemon(r.data))
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
     finally { setSaving(false) }
+  }
+
+  const importAll = async () => {
+    if (!confirm('Import all Pokemon species into this season? This will add any missing Pokemon.')) return
+    setImporting(true); setMsg('')
+    try {
+      const r = await axios.post(`/seasons/${sid}/pokemon/populate`, {}, { withCredentials: true })
+      setMsg(`Imported ${r.data.created} Pokemon (${r.data.total} total)`)
+      axios.get(`/seasons/${sid}/pokemon`).then(r => setPokemon(r.data))
+    } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
+    finally { setImporting(false) }
   }
 
   const lockTiers = async () => {
@@ -74,6 +86,9 @@ export default function PokemonTab() {
               {saving ? 'Saving...' : `Save ${Object.keys(edits).length} change(s)`}
             </button>
           )}
+          <button onClick={importAll} disabled={importing} className="px-4 py-1.5 rounded text-sm border" style={{ borderColor: 'var(--color-border)' }}>
+            {importing ? 'Importing...' : 'Import All Pokemon'}
+          </button>
           <button onClick={lockTiers} disabled={locking} className="px-4 py-1.5 rounded text-sm border border-red-400 text-red-600">
             {locking ? 'Locking...' : 'Lock Tiers'}
           </button>

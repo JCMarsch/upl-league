@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import axios from 'axios'
 import { useActiveSeason } from '../../hooks/useActiveSeason'
 
@@ -132,7 +133,10 @@ export default function TeamsTab() {
                     Manager: {userMap[team.manager_id] ?? team.manager_id} · Points remaining: {team.points_remaining}
                   </div>
                 </div>
-                <button onClick={() => { setEditingId(team.id); setEditForm({}) }} className="text-sm px-3 py-1 border rounded" style={{ borderColor: 'var(--color-border)' }}>Edit</button>
+                <div className="flex gap-2">
+                  <Link to={`/teams/${team.id}`} className="text-sm px-3 py-1 border rounded" style={{ borderColor: 'var(--color-border)' }}>View</Link>
+                  <button onClick={() => { setEditingId(team.id); setEditForm({}) }} className="text-sm px-3 py-1 border rounded" style={{ borderColor: 'var(--color-border)' }}>Edit</button>
+                </div>
               </div>
             )}
           </div>
