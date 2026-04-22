@@ -168,8 +168,11 @@ def bulk_update_pokemon(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    if not db.query(Season).filter(Season.id == season_id).first():
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
         raise HTTPException(status_code=404, detail="Season not found")
+    if season.status != "setup":
+        raise HTTPException(status_code=403, detail="Tiers are locked and cannot be edited")
 
     species_ids = [u.species_id for u in data.updates]
     existing = {
