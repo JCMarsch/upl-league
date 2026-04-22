@@ -8,6 +8,7 @@ interface Pokemon {
   id: number
   species_id: number
   species_name: string
+  species_forme_name: string | null
   tier: string | null
   point_cost: number | null
   is_legal: boolean
@@ -29,7 +30,7 @@ interface ImportRow {
 }
 
 const VALID_TIERS = new Set(TIERS)
-const TEMPLATE_ROWS = [['name', 'tier', 'point_cost'], ['charizard', 'S', '12'], ['incineroar', 'A', '8']]
+const TEMPLATE_ROWS = [['name', 'tier', 'point_cost'], ['charizard', 'S', '12'], ['incineroar', 'A', '8'], ['rotom-heat', 'B', '6'], ['typhlosion-hisui', 'C', '4']]
 
 function downloadTemplate() {
   const wb = XLSX.utils.book_new()
@@ -45,10 +46,16 @@ function ImportPanel({ pokemon, sid, onDone }: { pokemon: Pokemon[]; sid: number
   const [dragActive, setDragActive] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const nameMap = useMemo(
-    () => Object.fromEntries(pokemon.map(p => [p.species_name?.toLowerCase(), p])),
-    [pokemon]
-  )
+  const nameMap = useMemo(() => {
+    const map: Record<string, Pokemon> = {}
+    for (const p of pokemon) {
+      // Match by forme_name first (e.g. "rotom-heat", "typhlosion-hisui")
+      if (p.species_forme_name) map[p.species_forme_name.toLowerCase()] = p
+      // Also match by base species_name as fallback (e.g. "charizard")
+      if (p.species_name) map[p.species_name.toLowerCase()] = p
+    }
+    return map
+  }, [pokemon])
 
   function parseFile(file: File) {
     const reader = new FileReader()
@@ -117,6 +124,9 @@ function ImportPanel({ pokemon, sid, onDone }: { pokemon: Pokemon[]; sid: number
         <p className="font-medium" style={{ color: 'var(--color-text)' }}>Drop CSV or XLSX here, or click to browse</p>
         <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
           Required columns: <code>name</code>, <code>tier</code> — optional: <code>point_cost</code>
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+          Use PokeAPI slug format: <code>charizard</code>, <code>rotom-heat</code>, <code>typhlosion-hisui</code>, <code>charizard-mega-x</code>
         </p>
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => handleFiles(e.target.files)} />
       </div>

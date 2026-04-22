@@ -24,6 +24,7 @@ class SeasonPokemonOut(BaseModel):
     is_legal: bool
     drafted_by_team_id: Optional[int]
     species_name: Optional[str] = None
+    species_forme_name: Optional[str] = None
     species_sprite_url: Optional[str] = None
     species_artwork_url: Optional[str] = None
     species_shiny_sprite_url: Optional[str] = None
