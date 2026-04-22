@@ -320,10 +320,34 @@ export default function DragTierTab() {
             Drag Pokemon sprites into tier rows. Point costs auto-fill from Tier Pricing settings.
           </p>
 
+          {/* Unranked horizontal bar — drag from here into a tier */}
+          <div
+            className="rounded-lg border-2 overflow-hidden"
+            style={{ borderColor: TIER_COLORS['Untiered'].border }}
+            onDragOver={e => { e.preventDefault(); setDragOver('Untiered') }}
+            onDragLeave={() => setDragOver(t => t === 'Untiered' ? null : t)}
+            onDrop={() => handleDrop('Untiered')}
+          >
+            <div className="px-3 py-1 text-xs font-semibold select-none" style={{ background: TIER_COLORS['Untiered'].label, color: 'white' }}>
+              Unranked ({byTier['Untiered'].length})
+            </div>
+            <div
+              className="flex flex-wrap gap-1 p-2 min-h-[64px] transition-colors"
+              style={{ background: dragOver === 'Untiered' ? TIER_COLORS['Untiered'].border + '44' : TIER_COLORS['Untiered'].bg, alignContent: 'flex-start' }}
+            >
+              {byTier['Untiered'].map(p => (
+                <PokemonCard key={p.id} pokemon={p} onDragStart={() => { dragItem.current = p }} />
+              ))}
+              {byTier['Untiered'].length === 0 && dragOver !== 'Untiered' && (
+                <span className="text-xs self-center px-2" style={{ color: '#94a3b8' }}>All pokemon are tiered</span>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-1">
-            {[...TIERS, 'Untiered'].map(tier => {
+            {TIERS.map(tier => {
               const color = TIER_COLORS[tier]
-              const cost = tier !== 'Untiered' ? costForTier(tier) : null
+              const cost = costForTier(tier)
               return (
                 <div
                   key={tier}
