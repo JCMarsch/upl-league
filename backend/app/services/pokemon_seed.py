@@ -86,11 +86,18 @@ SKIP_PREFIXES: tuple[str, ...] = (
     "vivillon-", "alcremie-", "furfrou-", "unown-", "spewpa-", "scatterbug-",
 )
 
+SKIP_SUFFIXES: tuple[str, ...] = (
+    "-gmax",   # Gigantamax — battle-only transformation, same pokemon as base
+    "-totem",  # Totem Pokemon — same species, just larger
+)
+
 
 def _should_skip(slug: str) -> bool:
     if slug in SKIP_EXACT:
         return True
-    return any(slug.startswith(p) for p in SKIP_PREFIXES)
+    if any(slug.startswith(p) for p in SKIP_PREFIXES):
+        return True
+    return any(slug.endswith(s) for s in SKIP_SUFFIXES)
 
 
 def _get_generation(dex_num: int) -> int:
