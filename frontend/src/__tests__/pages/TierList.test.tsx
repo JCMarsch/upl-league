@@ -12,7 +12,8 @@ const mockPokemon = [
 
 beforeEach(() => {
   server.use(
-    http.get('/seasons/:seasonId/pokemon', () => HttpResponse.json(mockPokemon))
+    http.get('/seasons/:seasonId/pokemon', () => HttpResponse.json(mockPokemon)),
+    http.get('/seasons/:seasonId/tier-config', () => HttpResponse.json({ regular: {}, mega: {} }))
   )
 })
 
@@ -38,8 +39,8 @@ describe('TierListPage', () => {
   it('shows drafted indicator for drafted pokemon', async () => {
     render(<TierListPage />)
     await waitFor(() => {
-      // Charizard is drafted
-      expect(screen.getByText('Drafted')).toBeInTheDocument()
+      // Charizard is drafted — shown with a ✓ badge
+      expect(screen.getByText('✓')).toBeInTheDocument()
     })
   })
 
