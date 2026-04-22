@@ -24,6 +24,7 @@ export default function PokemonTab() {
   const [applyingReg, setApplyingReg] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [seeding, setSeeding] = useState(false)
+  const [seedProgress, setSeedProgress] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -35,6 +36,22 @@ export default function PokemonTab() {
       .then(r => { setPokemon(r.data); setPage(0) })
       .finally(() => setLoading(false))
   }, [sid])
+
+  // On mount: check if a seed is already running (survives page reload)
+  useEffect(() => {
+    axios.get('/admin/seed-pokemon/status', { withCredentials: true })
+      .then(r => {
+        if (r.data.running) {
+          setSeeding(true)
+          setSeedProgress('Seeding in progress...')
+          startSeedPoll()
+        } else if (r.data.result) {
+          const { created, updated, errors } = r.data.result
+          setSeedProgress(`Last seed: Created ${created}, Updated ${updated}, Errors ${errors}`)
+        }
+      })
+      .catch(() => {}) // not admin or server error — ignore silently
+  }, [])
 
   // Reset page when filters change
   useEffect(() => { setPage(0) }, [search, tierFilter])
@@ -73,29 +90,33 @@ export default function PokemonTab() {
     finally { setImporting(false); setLoading(false) }
   }
 
+  const startSeedPoll = () => {
+    const poll = setInterval(async () => {
+      try {
+        const r = await axios.get('/admin/seed-pokemon/status', { withCredentials: true })
+        if (!r.data.running) {
+          clearInterval(poll)
+          setSeeding(false)
+          if (r.data.error) {
+            setSeedProgress(`Seed failed: ${r.data.error}`)
+          } else {
+            const { created, updated, errors, skipped } = r.data.result
+            setSeedProgress(`Seed complete! Created: ${created}, Updated: ${updated}, Errors: ${errors}, Cosmetic skipped: ${skipped}`)
+          }
+        }
+      } catch { clearInterval(poll); setSeeding(false) }
+    }, 5000)
+    return poll
+  }
+
   const seedSpecies = async () => {
     if (!confirm('Fetch all ~1300 Pokemon from PokeAPI and update the species database? This runs in the background and takes a few minutes.')) return
-    setSeeding(true); setMsg('Seeding started — this runs in the background. Check back in a few minutes.')
     try {
       await axios.post('/admin/seed-pokemon', {}, { withCredentials: true })
-      // Poll for completion
-      const poll = setInterval(async () => {
-        try {
-          const r = await axios.get('/admin/seed-pokemon/status', { withCredentials: true })
-          if (!r.data.running) {
-            clearInterval(poll)
-            setSeeding(false)
-            if (r.data.error) {
-              setMsg(`Seed failed: ${r.data.error}`)
-            } else {
-              const { created, updated, errors, skipped } = r.data.result
-              setMsg(`Seed complete! Created: ${created}, Updated: ${updated}, Errors: ${errors}, Skipped (cosmetic): ${skipped}`)
-            }
-          }
-        } catch { clearInterval(poll); setSeeding(false) }
-      }, 5000)
+      setSeeding(true)
+      setSeedProgress('Seeding in progress — fetching from PokeAPI...')
+      startSeedPoll()
     } catch (e: any) {
-      setSeeding(false)
       setMsg(e.response?.data?.detail || 'Failed to start seed')
     }
   }
@@ -177,6 +198,18 @@ export default function PokemonTab() {
         </div>
       </div>
 
+      {seedProgress && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md text-sm" style={{
+          background: seeding ? '#eff6ff' : seedProgress.includes('failed') ? '#fef2f2' : '#f0fdf4',
+          border: `1px solid ${seeding ? '#bfdbfe' : seedProgress.includes('failed') ? '#fecaca' : '#bbf7d0'}`,
+          color: seeding ? '#1d4ed8' : seedProgress.includes('failed') ? '#dc2626' : '#15803d',
+        }}>
+          {seeding && (
+            <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          )}
+          {seedProgress}
+        </div>
+      )}
       {msg && <p className={`text-sm ${msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
 
       {/* Filters */}
