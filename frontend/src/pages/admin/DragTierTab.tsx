@@ -131,6 +131,12 @@ function ImportPanel({ pokemon, sid, onDone }: { pokemon: Pokemon[]; sid: number
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={e => handleFiles(e.target.files)} />
       </div>
 
+      {msg && (
+        <div className={`px-3 py-2 rounded text-sm font-medium ${msg.startsWith('Applied') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {msg}
+        </div>
+      )}
+
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={downloadTemplate}
@@ -148,11 +154,6 @@ function ImportPanel({ pokemon, sid, onDone }: { pokemon: Pokemon[]; sid: number
           >
             {applying ? 'Applying…' : `Apply ${good} valid row${good !== 1 ? 's' : ''}`}
           </button>
-        )}
-        {msg && (
-          <span className={`text-sm self-center ${msg.startsWith('Applied') ? 'text-green-600' : 'text-red-500'}`}>
-            {msg}
-          </span>
         )}
       </div>
 

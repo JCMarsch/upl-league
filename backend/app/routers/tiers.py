@@ -168,20 +168,21 @@ def bulk_update_pokemon(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    season = db.query(Season).filter(Season.id == season_id).first()
-    if not season:
+    if not db.query(Season).filter(Season.id == season_id).first():
         raise HTTPException(status_code=404, detail="Season not found")
-    if season.status != "setup":
-        raise HTTPException(status_code=403, detail="Tiers can only be edited during setup")
 
-    updated = []
-    for update in data.updates:
-        sp = db.query(SeasonPokemon).filter(
+    species_ids = [u.species_id for u in data.updates]
+    existing = {
+        sp.species_id: sp
+        for sp in db.query(SeasonPokemon).filter(
             SeasonPokemon.season_id == season_id,
-            SeasonPokemon.species_id == update.species_id,
-        ).first()
+            SeasonPokemon.species_id.in_(species_ids),
+        ).all()
+    }
+
+    for update in data.updates:
+        sp = existing.get(update.species_id)
         if not sp:
-            # Create if doesn't exist
             sp = SeasonPokemon(season_id=season_id, species_id=update.species_id)
             db.add(sp)
         if "tier" in update.model_fields_set:
@@ -190,10 +191,9 @@ def bulk_update_pokemon(
             sp.point_cost = update.point_cost
         if "is_legal" in update.model_fields_set:
             sp.is_legal = update.is_legal
-        updated.append(update.species_id)
 
     db.commit()
-    return {"updated": len(updated), "species_ids": updated}
+    return {"updated": len(species_ids)}
 
 
 TIERS = ["S", "A", "B", "C", "D", "Free"]
