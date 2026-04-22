@@ -36,7 +36,7 @@ export default function TierListPage() {
       axios.get(`/seasons/${seasonId}/tier-config`),
     ])
       .then(([pkRes, cfgRes]) => {
-        setPokemon(pkRes.data.filter((p: Pokemon) => p.is_legal && p.tier))
+        setPokemon(pkRes.data.filter((p: Pokemon) => p.is_legal))
         setTierConfig(cfgRes.data)
       })
       .catch(() => setError('Failed to load tier list'))
@@ -45,10 +45,12 @@ export default function TierListPage() {
 
   const filtered = pokemon.filter(p => !!p.is_mega === showMega)
 
+  const untiered = filtered.filter(p => !p.tier)
+
   const byTier: Record<string, Pokemon[]> = {}
   for (const tier of TIERS) byTier[tier] = []
   for (const p of filtered) {
-    if (byTier[p.tier]) byTier[p.tier].push(p)
+    if (p.tier && byTier[p.tier]) byTier[p.tier].push(p)
   }
 
   const activeTiers = TIERS.filter(t => byTier[t]?.length > 0)
@@ -81,6 +83,26 @@ export default function TierListPage() {
           </div>
         </div>
       </div>
+
+      {untiered.length > 0 && (
+        <div className="rounded-lg border-2 overflow-hidden" style={{ borderColor: TIER_COLORS['Untiered'].border }}>
+          <div className="px-3 py-1 text-xs font-semibold select-none" style={{ background: TIER_COLORS['Untiered'].label, color: 'white' }}>
+            Unranked ({untiered.length})
+          </div>
+          <div className="flex flex-wrap gap-1 p-2 overflow-x-auto" style={{ background: TIER_COLORS['Untiered'].bg }}>
+            {untiered.map(p => (
+              <div key={p.id} className="flex flex-col items-center" style={{ width: 64 }}>
+                {p.species_sprite_url ? (
+                  <img src={p.species_sprite_url} alt={p.species_name} style={{ width: 48, height: 48, objectFit: 'contain' }} />
+                ) : (
+                  <div style={{ width: 48, height: 48, background: '#e5e7eb', borderRadius: 4 }} />
+                )}
+                <span style={{ fontSize: 9, textAlign: 'center', lineHeight: 1.2, color: '#374151', wordBreak: 'break-word', width: '100%' }}>{p.species_name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {activeTiers.length === 0 ? (
         <div className="p-12 text-center" style={{ color: 'var(--color-text-muted)' }}>
