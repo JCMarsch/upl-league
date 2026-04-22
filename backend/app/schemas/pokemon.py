@@ -8,6 +8,8 @@ class SeasonPokemonUpdate(BaseModel):
     point_cost: Optional[int] = None
     is_legal: Optional[bool] = None
 
+    model_config = {"from_attributes": True}
+
 
 class BulkPokemonUpdate(BaseModel):
     updates: List[SeasonPokemonUpdate]
@@ -25,5 +27,6 @@ class SeasonPokemonOut(BaseModel):
     species_sprite_url: Optional[str] = None
     species_type1: Optional[str] = None
     species_type2: Optional[str] = None
+    is_mega: Optional[bool] = None
 
     model_config = {"from_attributes": True}

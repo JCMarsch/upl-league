@@ -1,100 +1,129 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { useActiveSeason } from '../hooks/useActiveSeason'
+import { TIERS, TIER_COLORS } from '../constants/tiers'
 
 interface Pokemon {
   id: number
   species_id: number
   tier: string
-  point_cost: number
+  point_cost: number | null
   is_legal: boolean
+  is_mega: boolean
   drafted_by_team_id: number | null
   species_name: string
-  species_sprite_url: string
-  species_type1: string
-  species_type2: string | null
+  species_sprite_url: string | null
 }
 
-const TIER_COLORS: Record<string, string> = {
-  S: 'bg-red-100 border-red-400',
-  A: 'bg-orange-100 border-orange-400',
-  B: 'bg-yellow-100 border-yellow-400',
-  C: 'bg-green-100 border-green-400',
-  D: 'bg-blue-100 border-blue-400',
-  Free: 'bg-gray-100 border-gray-400',
-}
-
-const TIER_HEADER_COLORS: Record<string, string> = {
-  S: 'bg-red-400',
-  A: 'bg-orange-400',
-  B: 'bg-yellow-400',
-  C: 'bg-green-400',
-  D: 'bg-blue-400',
-  Free: 'bg-gray-400',
+interface TierConfig {
+  regular: Record<string, number | null>
+  mega: Record<string, number | null>
 }
 
 export default function TierListPage() {
-  const { seasonId, loading: seasonLoading } = useActiveSeason()
+  const { seasonId, seasons, setSeasonId, loading: seasonLoading } = useActiveSeason()
   const [pokemon, setPokemon] = useState<Pokemon[]>([])
+  const [tierConfig, setTierConfig] = useState<TierConfig>({ regular: {}, mega: {} })
+  const [showMega, setShowMega] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (seasonLoading) return
-    if (!seasonId) { setLoading(false); return }
+    if (seasonLoading || !seasonId) { if (!seasonLoading) setLoading(false); return }
     setLoading(true)
-    axios.get(`/seasons/${seasonId}/pokemon`)
-      .then((r) => setPokemon(r.data.filter((p: Pokemon) => p.is_legal)))
-      .catch(() => setError('Failed to load Pokemon'))
+    Promise.all([
+      axios.get(`/seasons/${seasonId}/pokemon`),
+      axios.get(`/seasons/${seasonId}/tier-config`),
+    ])
+      .then(([pkRes, cfgRes]) => {
+        setPokemon(pkRes.data.filter((p: Pokemon) => p.is_legal && p.tier))
+        setTierConfig(cfgRes.data)
+      })
+      .catch(() => setError('Failed to load tier list'))
       .finally(() => setLoading(false))
   }, [seasonId, seasonLoading])
 
-  const byTier = pokemon.reduce<Record<string, Pokemon[]>>((acc, p) => {
-    const tier = p.tier || 'Untiered'
-    acc[tier] = acc[tier] || []
-    acc[tier].push(p)
-    return acc
-  }, {})
+  const filtered = pokemon.filter(p => !!p.is_mega === showMega)
 
-  const tierOrder = ['S', 'A', 'B', 'C', 'D', 'Free', 'Untiered']
-  const sortedTiers = tierOrder.filter((t) => byTier[t]?.length > 0)
+  const byTier: Record<string, Pokemon[]> = {}
+  for (const tier of TIERS) byTier[tier] = []
+  for (const p of filtered) {
+    if (byTier[p.tier]) byTier[p.tier].push(p)
+  }
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Loading tier list...</div>
+  const activeTiers = TIERS.filter(t => byTier[t]?.length > 0)
+
+  if (loading) return <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Loading tier list...</div>
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Tier List</h1>
-
-      {sortedTiers.map((tier) => (
-        <div key={tier} className={`mb-4 border-2 rounded-lg overflow-hidden ${TIER_COLORS[tier] || 'bg-gray-100 border-gray-400'}`}>
-          <div className={`px-4 py-2 font-bold text-white text-lg ${TIER_HEADER_COLORS[tier] || 'bg-gray-400'}`}>
-            {tier}
-          </div>
-          <div className="flex flex-wrap gap-3 p-3">
-            {byTier[tier].map((p) => (
-              <div key={p.id} className="flex flex-col items-center w-20">
-                <div className="relative">
-                  {p.species_sprite_url ? (
-                    <img src={p.species_sprite_url} alt={p.species_name} className="w-16 h-16 object-contain" />
-                  ) : (
-                    <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center text-xs text-gray-500">?</div>
-                  )}
-                  {p.drafted_by_team_id && (
-                    <span className="absolute -top-1 -right-1 bg-gray-700 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">✓</span>
-                  )}
-                </div>
-                <span className="text-xs text-center mt-1 truncate w-full text-center">{p.species_name}</span>
-                <span className="text-xs font-bold text-gray-600">{p.point_cost}pt</span>
-                {p.drafted_by_team_id && <span className="text-xs text-gray-400">Drafted</span>}
-              </div>
-            ))}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold">Tier List</h1>
+        <div className="flex gap-2 flex-wrap items-center">
+          {seasons.length > 1 && (
+            <select value={seasonId ?? ''} onChange={e => setSeasonId(+e.target.value)}
+              className="border rounded px-2 py-1 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+              {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <div className="flex border rounded overflow-hidden text-sm" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              onClick={() => setShowMega(false)}
+              className="px-3 py-1.5"
+              style={{ background: !showMega ? 'var(--color-primary)' : 'var(--color-surface)', color: !showMega ? 'white' : 'inherit' }}
+            >Regular</button>
+            <button
+              onClick={() => setShowMega(true)}
+              className="px-3 py-1.5"
+              style={{ background: showMega ? 'var(--color-primary)' : 'var(--color-surface)', color: showMega ? 'white' : 'inherit' }}
+            >Mega</button>
           </div>
         </div>
-      ))}
+      </div>
 
-      {sortedTiers.length === 0 && (
-        <div className="text-center text-gray-500 py-12">No Pokemon tiers have been set yet.</div>
+      {activeTiers.length === 0 ? (
+        <div className="p-12 text-center" style={{ color: 'var(--color-text-muted)' }}>
+          No {showMega ? 'mega ' : ''}Pokemon tiers set yet.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {activeTiers.map(tier => {
+            const color = TIER_COLORS[tier]
+            const cost = showMega ? tierConfig.mega[tier] : tierConfig.regular[tier]
+            return (
+              <div key={tier} className="rounded-lg border-2 overflow-hidden" style={{ borderColor: color.border }}>
+                <div className="px-4 py-2 flex items-center gap-3" style={{ background: color.label }}>
+                  <span className="font-bold text-white text-lg w-12">{tier}</span>
+                  {cost !== null && cost !== undefined && (
+                    <span className="text-white text-sm opacity-90 font-medium">{cost} pts</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2 p-3" style={{ background: color.bg }}>
+                  {byTier[tier].map(p => (
+                    <div key={p.id} className="flex flex-col items-center" style={{ width: 72 }}>
+                      <div className="relative">
+                        {p.species_sprite_url ? (
+                          <img src={p.species_sprite_url} alt={p.species_name} style={{ width: 56, height: 56, objectFit: 'contain' }} />
+                        ) : (
+                          <div style={{ width: 56, height: 56, background: '#e5e7eb', borderRadius: 4 }} />
+                        )}
+                        {p.drafted_by_team_id && (
+                          <span className="absolute -top-1 -right-1 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-bold"
+                            style={{ background: '#374151', fontSize: 9 }}>✓</span>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 10, textAlign: 'center', lineHeight: 1.2, color: '#374151', wordBreak: 'break-word', width: '100%' }}>{p.species_name}</span>
+                      {p.point_cost !== null && (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#6b7280' }}>{p.point_cost}pt</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )

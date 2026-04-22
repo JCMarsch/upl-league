@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useActiveSeason } from '../hooks/useActiveSeason'
+import { TIERS } from '../constants/tiers'
 
 interface DraftState {
   id: number
@@ -48,8 +49,6 @@ const TYPE_COLORS: Record<string, string> = {
   Ghost: '#735797', Dragon: '#6F35FC', Dark: '#705746', Steel: '#B7B7CE',
   Fairy: '#D685AD', Normal: '#A8A77A',
 }
-
-const TIERS = ['S', 'A', 'B', 'C', 'D', 'Free']
 
 export default function DraftPage() {
   const { user } = useAuthStore()

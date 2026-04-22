@@ -5,9 +5,10 @@ from app.database import get_db
 from app.auth import require_admin
 from app.models.season import Season
 from app.models.pokemon import SeasonPokemon, PokemonSpecies
+from app.models.config import LeagueConfig
 from app.models.user import User
 from app.schemas.pokemon import BulkPokemonUpdate, SeasonPokemonOut
-from typing import List
+from typing import List, Dict, Optional
 
 # Pokemon Champions Regulation M-A legal species (base species names matching PokeAPI slugs)
 # Source: https://www.serebii.net/pokedex-champions/
@@ -87,6 +88,7 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
             species_sprite_url=sp.species.sprite_url if sp.species else None,
             species_type1=sp.species.type1 if sp.species else None,
             species_type2=sp.species.type2 if sp.species else None,
+            is_mega=sp.species.is_mega if sp.species else None,
         )
         for sp in rows
     ]
@@ -127,24 +129,23 @@ def apply_regulation(
 
     legal_species_names = REGULATION_LEGAL[regulation]
 
-    rows = (
-        db.query(SeasonPokemon)
-        .filter(SeasonPokemon.season_id == season_id)
-        .options(joinedload(SeasonPokemon.species))
-        .all()
-    )
+    legal_species_ids = {
+        row.id
+        for row in db.query(PokemonSpecies.id).filter(
+            PokemonSpecies.name.in_(list(legal_species_names))
+        ).all()
+    }
 
-    legal_count = 0
-    illegal_count = 0
-    for sp in rows:
-        # Match on base species name — covers all formes/megas of a legal species
-        species_name = sp.species.name if sp.species else None
-        is_legal = species_name in legal_species_names if species_name else False
-        sp.is_legal = is_legal
-        if is_legal:
-            legal_count += 1
-        else:
-            illegal_count += 1
+    # Two bulk UPDATEs instead of row-by-row
+    legal_count = db.query(SeasonPokemon).filter(
+        SeasonPokemon.season_id == season_id,
+        SeasonPokemon.species_id.in_(legal_species_ids),
+    ).update({"is_legal": True}, synchronize_session=False)
+
+    illegal_count = db.query(SeasonPokemon).filter(
+        SeasonPokemon.season_id == season_id,
+        SeasonPokemon.species_id.notin_(legal_species_ids),
+    ).update({"is_legal": False}, synchronize_session=False)
 
     db.commit()
     return {
@@ -178,16 +179,78 @@ def bulk_update_pokemon(
             # Create if doesn't exist
             sp = SeasonPokemon(season_id=season_id, species_id=update.species_id)
             db.add(sp)
-        if update.tier is not None:
+        if "tier" in update.model_fields_set:
             sp.tier = update.tier
-        if update.point_cost is not None:
+        if "point_cost" in update.model_fields_set:
             sp.point_cost = update.point_cost
-        if update.is_legal is not None:
+        if "is_legal" in update.model_fields_set:
             sp.is_legal = update.is_legal
         updated.append(update.species_id)
 
     db.commit()
     return {"updated": len(updated), "species_ids": updated}
+
+
+TIERS = ["S", "A", "B", "C", "D", "Free"]
+
+
+def _get_tier_config(season_id: int, db: Session) -> Dict[str, Dict[str, Optional[int]]]:
+    rows = db.query(LeagueConfig).filter(
+        LeagueConfig.season_id == season_id,
+        LeagueConfig.key.in_([f"tier_cost_{t}" for t in TIERS] + [f"mega_tier_cost_{t}" for t in TIERS]),
+    ).all()
+    config: Dict[str, Dict[str, Optional[int]]] = {
+        "regular": {t: None for t in TIERS},
+        "mega": {t: None for t in TIERS},
+    }
+    for row in rows:
+        if row.key.startswith("mega_tier_cost_"):
+            tier = row.key[len("mega_tier_cost_"):]
+            config["mega"][tier] = int(row.value) if row.value is not None else None
+        elif row.key.startswith("tier_cost_"):
+            tier = row.key[len("tier_cost_"):]
+            config["regular"][tier] = int(row.value) if row.value is not None else None
+    return config
+
+
+@router.get("/seasons/{season_id}/tier-config")
+def get_tier_config(season_id: int, db: Session = Depends(get_db)):
+    return _get_tier_config(season_id, db)
+
+
+@router.post("/seasons/{season_id}/tier-config")
+def set_tier_config(
+    season_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    regular = body.get("regular", {})
+    mega = body.get("mega", {})
+
+    def upsert(key: str, value: Optional[int]):
+        row = db.query(LeagueConfig).filter(
+            LeagueConfig.season_id == season_id,
+            LeagueConfig.key == key,
+        ).first()
+        if row:
+            row.value = str(value) if value is not None else None
+            row.updated_by_id = current_user.id
+        else:
+            db.add(LeagueConfig(season_id=season_id, key=key, value=str(value) if value is not None else None, updated_by_id=current_user.id))
+
+    for tier in TIERS:
+        if tier in regular:
+            upsert(f"tier_cost_{tier}", regular[tier])
+        if tier in mega:
+            upsert(f"mega_tier_cost_{tier}", mega[tier])
+
+    db.commit()
+    return _get_tier_config(season_id, db)
 
 
 @router.post("/seasons/{season_id}/lock-tiers")

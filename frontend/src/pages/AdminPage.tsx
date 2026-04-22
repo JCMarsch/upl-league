@@ -1,16 +1,20 @@
 import { useState } from 'react'
 import SeasonsTab from './admin/SeasonsTab'
 import PokemonTab from './admin/PokemonTab'
+import DragTierTab from './admin/DragTierTab'
+import TierPricingTab from './admin/TierPricingTab'
 import TeamsTab from './admin/TeamsTab'
 import WaiversTab from './admin/WaiversTab'
 import TradesTab from './admin/TradesTab'
 import EditTab from './admin/EditTab'
 
-type Tab = 'seasons' | 'pokemon' | 'teams' | 'waivers' | 'trades' | 'edit'
+type Tab = 'seasons' | 'tier-list' | 'tier-pricing' | 'pokemon' | 'teams' | 'waivers' | 'trades' | 'edit'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'seasons', label: 'Seasons' },
-  { key: 'pokemon', label: 'Pokemon' },
+  { key: 'tier-list', label: 'Tier List' },
+  { key: 'tier-pricing', label: 'Tier Pricing' },
+  { key: 'pokemon', label: 'Pokemon (Table)' },
   { key: 'teams', label: 'Teams' },
   { key: 'waivers', label: 'Waivers' },
   { key: 'trades', label: 'Trades' },
@@ -42,6 +46,8 @@ export default function AdminPage() {
       </div>
 
       {tab === 'seasons' && <SeasonsTab />}
+      {tab === 'tier-list' && <DragTierTab />}
+      {tab === 'tier-pricing' && <TierPricingTab />}
       {tab === 'pokemon' && <PokemonTab />}
       {tab === 'teams' && <TeamsTab />}
       {tab === 'waivers' && <WaiversTab />}

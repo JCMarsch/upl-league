@@ -1,13 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import { useActiveSeason } from '../../hooks/useActiveSeason'
+import { TIERS } from '../../constants/tiers'
 
 interface Pokemon {
   id: number; species_id: number; species_name: string
   tier: string | null; point_cost: number | null; is_legal: boolean
 }
-
-const TIERS = ['S', 'A', 'B', 'C', 'D', 'Free']
 const PAGE_SIZE = 50
 
 export default function PokemonTab() {
