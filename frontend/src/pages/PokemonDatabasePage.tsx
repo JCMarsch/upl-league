@@ -38,6 +38,7 @@ export default function PokemonDatabasePage() {
   const [tierFilter, setTierFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [availabilityFilter, setAvailabilityFilter] = useState('')
+  const [legalOnly, setLegalOnly] = useState(true)
 
   useEffect(() => {
     if (seasonLoading) return
@@ -51,6 +52,7 @@ export default function PokemonDatabasePage() {
 
   const filtered = useMemo(() => {
     return pokemon.filter((p) => {
+      if (legalOnly && !p.is_legal) return false
       if (search && !p.species_name?.toLowerCase().includes(search.toLowerCase())) return false
       if (tierFilter && p.tier !== tierFilter) return false
       if (typeFilter && p.species_type1 !== typeFilter && p.species_type2 !== typeFilter) return false
@@ -58,7 +60,7 @@ export default function PokemonDatabasePage() {
       if (availabilityFilter === 'drafted' && !p.drafted_by_team_id) return false
       return true
     })
-  }, [pokemon, search, tierFilter, typeFilter, availabilityFilter])
+  }, [pokemon, search, tierFilter, typeFilter, availabilityFilter, legalOnly])
 
   const tiers = [...new Set(pokemon.map((p) => p.tier).filter(Boolean))] as string[]
   const types = [...new Set(pokemon.flatMap((p) => [p.species_type1, p.species_type2].filter(Boolean)))] as string[]
@@ -67,27 +69,43 @@ export default function PokemonDatabasePage() {
     <div className="max-w-7xl mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Pokemon Database</h1>
 
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6 items-center">
         <input
           type="text"
           placeholder="Search Pokemon..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+          className="border rounded-md px-3 py-2 text-sm"
+          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
         />
-        <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+        <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}
+          className="border rounded-md px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
           <option value="">All Tiers</option>
           {tiers.sort().map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+          className="border rounded-md px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
           <option value="">All Types</option>
           {types.sort().map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={availabilityFilter} onChange={(e) => setAvailabilityFilter(e.target.value)} className="border border-gray-300 rounded-md px-3 py-2 text-sm">
+        <select value={availabilityFilter} onChange={(e) => setAvailabilityFilter(e.target.value)}
+          className="border rounded-md px-3 py-2 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
           <option value="">All</option>
           <option value="available">Available</option>
           <option value="drafted">Drafted</option>
         </select>
+        <button
+          onClick={() => setLegalOnly(v => !v)}
+          className="px-3 py-2 rounded-md text-sm font-medium border"
+          style={{
+            borderColor: legalOnly ? '#22c55e' : 'var(--color-border)',
+            color: legalOnly ? '#16a34a' : 'var(--color-text-muted)',
+            background: legalOnly ? '#f0fdf4' : 'var(--color-surface)',
+          }}
+        >
+          {legalOnly ? 'Legal Only' : 'All Pokemon'}
+        </button>
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{filtered.length} shown</span>
       </div>
 
       {!seasonId && !seasonLoading && (

@@ -22,6 +22,7 @@ export default function PokemonTab() {
   const [locking, setLocking] = useState(false)
   const [importing, setImporting] = useState(false)
   const [applyingReg, setApplyingReg] = useState(false)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -82,6 +83,17 @@ export default function PokemonTab() {
       setPage(0)
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed to apply regulation') }
     finally { setApplyingReg(false) }
+  }
+
+  const toggleLegal = async (p: Pokemon) => {
+    setTogglingId(p.id)
+    try {
+      await axios.post(`/seasons/${sid}/pokemon/bulk-update`, {
+        updates: [{ species_id: p.species_id, is_legal: !p.is_legal }]
+      }, { withCredentials: true })
+      setPokemon(prev => prev.map(pk => pk.id === p.id ? { ...pk, is_legal: !p.is_legal } : pk))
+    } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed to toggle') }
+    finally { setTogglingId(null) }
   }
 
   const lockTiers = async () => {
@@ -198,7 +210,14 @@ export default function PokemonTab() {
                           className="border rounded px-1 py-0.5 text-xs w-16" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }} />
                       </td>
                       <td className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--color-border)' }}>
-                        <input type="checkbox" checked={edit.is_legal ?? p.is_legal} onChange={e => setEdit(p.id, 'is_legal', e.target.checked)} />
+                        <button
+                          onClick={() => toggleLegal(p)}
+                          disabled={togglingId === p.id}
+                          className="px-2 py-0.5 rounded-full text-xs font-semibold text-white transition-opacity"
+                          style={{ background: p.is_legal ? '#22c55e' : '#ef4444', opacity: togglingId === p.id ? 0.5 : 1 }}
+                        >
+                          {p.is_legal ? 'Legal' : 'Illegal'}
+                        </button>
                       </td>
                     </tr>
                   )

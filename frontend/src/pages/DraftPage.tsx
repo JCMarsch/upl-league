@@ -169,12 +169,23 @@ export default function DraftPage() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Draft Room</h1>
-        <div className="p-8 text-center rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
-          <p className="text-lg mb-4" style={{ color: 'var(--color-text-muted)' }}>Draft has not started yet.</p>
+        <div className="p-8 rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+          <p className="text-lg font-semibold mb-4">Draft has not started yet.</p>
+          <p className="text-sm mb-4" style={{ color: 'var(--color-text-muted)' }}>Before the draft can begin, an admin must complete these steps:</p>
+          <ol className="space-y-2 mb-6 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>1.</span> Import all Pokemon and apply a regulation preset (Admin → Pokemon table)</li>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>2.</span> Assign every legal Pokemon to a tier — either via drag-and-drop or CSV upload (Admin → Tier List)</li>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>3.</span> Lock tiers once assignments are complete (Admin → Pokemon table → Lock Tiers)</li>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>4.</span> Ensure at least one team is registered for this season (Admin → Seasons)</li>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>5.</span> Click Start Draft below</li>
+          </ol>
           {isAdmin && (
             <button onClick={startDraft} className="px-6 py-2 rounded text-white font-semibold" style={{ background: 'var(--color-primary)' }}>
               Start Draft
             </button>
+          )}
+          {!isAdmin && (
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Contact your league admin when you're ready to draft.</p>
           )}
         </div>
       </div>

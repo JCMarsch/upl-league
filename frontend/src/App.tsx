@@ -19,12 +19,13 @@ import NotificationsPage from './pages/NotificationsPage'
 import TeamsListPage from './pages/TeamsListPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
+import logo from './assets/APL_Logo.png'
 
 function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-bg)' }}>
       <div className="text-center">
-        <h1 className="text-5xl font-bold mb-3" style={{ color: 'var(--color-primary)' }}>UPL</h1>
+        <img src={logo} alt="UPL Logo" style={{ height: 180, objectFit: 'contain', margin: '0 auto 16px' }} />
         <p className="text-lg" style={{ color: 'var(--color-text-muted)' }}>Pokemon Draft League</p>
       </div>
     </div>
