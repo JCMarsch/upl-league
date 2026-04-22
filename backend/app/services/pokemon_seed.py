@@ -180,21 +180,26 @@ def run_seed(db: Session, progress_cb=None) -> dict:
     skipped = len(all_slugs) - len(to_process)
 
     created = updated = errors = 0
+    total = len(to_process)
+    if progress_cb:
+        progress_cb(0, total)
+
     for i, slug in enumerate(to_process):
         data = _fetch(f"{BASE_URL}/pokemon/{slug}")
         if not data:
             errors += 1
-            continue
-        result = _upsert(db, slug, data)
-        if result == "created":
-            created += 1
         else:
-            updated += 1
+            result = _upsert(db, slug, data)
+            if result == "created":
+                created += 1
+            else:
+                updated += 1
 
         if (i + 1) % 50 == 0:
             db.commit()
-            if progress_cb:
-                progress_cb(i + 1, len(to_process))
+
+        if progress_cb:
+            progress_cb(i + 1, total)
 
     db.commit()
     return {"created": created, "updated": updated, "errors": errors, "skipped": skipped}

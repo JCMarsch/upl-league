@@ -19,7 +19,7 @@ from app.database import SessionLocal
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 # Simple in-process seed status (reset on server restart)
-_seed_status: dict = {"running": False, "result": None, "error": None}
+_seed_status: dict = {"running": False, "done": 0, "total": 0, "result": None, "error": None}
 _seed_lock = threading.Lock()
 
 
@@ -27,12 +27,17 @@ def _do_seed():
     global _seed_status
     db = SessionLocal()
     try:
-        result = run_seed(db)
+        def on_progress(done: int, total: int):
+            with _seed_lock:
+                _seed_status["done"] = done
+                _seed_status["total"] = total
+
+        result = run_seed(db, progress_cb=on_progress)
         with _seed_lock:
-            _seed_status = {"running": False, "result": result, "error": None}
+            _seed_status = {"running": False, "done": result.get("created", 0) + result.get("updated", 0), "total": _seed_status["total"], "result": result, "error": None}
     except Exception as e:
         with _seed_lock:
-            _seed_status = {"running": False, "result": None, "error": str(e)}
+            _seed_status = {"running": False, "done": 0, "total": 0, "result": None, "error": str(e)}
     finally:
         db.close()
 
@@ -345,6 +350,8 @@ def start_seed_pokemon(
         if _seed_status["running"]:
             raise HTTPException(status_code=409, detail="Seed already in progress")
         _seed_status["running"] = True
+        _seed_status["done"] = 0
+        _seed_status["total"] = 0
         _seed_status["result"] = None
         _seed_status["error"] = None
     background_tasks.add_task(_do_seed)

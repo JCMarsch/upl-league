@@ -25,6 +25,8 @@ export default function PokemonTab() {
   const [togglingId, setTogglingId] = useState<number | null>(null)
   const [seeding, setSeeding] = useState(false)
   const [seedProgress, setSeedProgress] = useState<string | null>(null)
+  const [seedDone, setSeedDone] = useState(0)
+  const [seedTotal, setSeedTotal] = useState(0)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -43,6 +45,8 @@ export default function PokemonTab() {
       .then(r => {
         if (r.data.running) {
           setSeeding(true)
+          setSeedDone(r.data.done || 0)
+          setSeedTotal(r.data.total || 0)
           setSeedProgress('Seeding in progress...')
           startSeedPoll()
         } else if (r.data.result) {
@@ -94,6 +98,8 @@ export default function PokemonTab() {
     const poll = setInterval(async () => {
       try {
         const r = await axios.get('/admin/seed-pokemon/status', { withCredentials: true })
+        setSeedDone(r.data.done || 0)
+        setSeedTotal(r.data.total || 0)
         if (!r.data.running) {
           clearInterval(poll)
           setSeeding(false)
@@ -105,7 +111,7 @@ export default function PokemonTab() {
           }
         }
       } catch { clearInterval(poll); setSeeding(false) }
-    }, 5000)
+    }, 3000)
     return poll
   }
 
@@ -199,15 +205,31 @@ export default function PokemonTab() {
       </div>
 
       {seedProgress && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md text-sm" style={{
+        <div className="px-3 py-2 rounded-md text-sm space-y-1.5" style={{
           background: seeding ? '#eff6ff' : seedProgress.includes('failed') ? '#fef2f2' : '#f0fdf4',
           border: `1px solid ${seeding ? '#bfdbfe' : seedProgress.includes('failed') ? '#fecaca' : '#bbf7d0'}`,
           color: seeding ? '#1d4ed8' : seedProgress.includes('failed') ? '#dc2626' : '#15803d',
         }}>
-          {seeding && (
-            <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2">
+            {seeding && (
+              <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            )}
+            <span>
+              {seeding && seedTotal > 0
+                ? `Seeding Pokemon from PokeAPI — ${seedDone} / ${seedTotal} (${Math.round(seedDone / seedTotal * 100)}%)`
+                : seeding
+                ? 'Seeding in progress — fetching Pokemon list...'
+                : seedProgress}
+            </span>
+          </div>
+          {seeding && seedTotal > 0 && (
+            <div className="w-full rounded-full overflow-hidden" style={{ height: 6, background: '#bfdbfe' }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${Math.round(seedDone / seedTotal * 100)}%`, background: '#2563eb' }}
+              />
+            </div>
           )}
-          {seedProgress}
         </div>
       )}
       {msg && <p className={`text-sm ${msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
