@@ -87,21 +87,23 @@ export default function TierListPage() {
           No {showMega ? 'mega ' : ''}Pokemon tiers set yet.
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex gap-1 overflow-x-auto pb-2">
           {activeTiers.map(tier => {
             const color = TIER_COLORS[tier]
             const cost = showMega ? tierConfig.mega[tier] : tierConfig.regular[tier]
             return (
-              <div key={tier} className="flex border-2 rounded-lg overflow-hidden min-h-[72px]" style={{ borderColor: color.border }}>
-                <div className="flex flex-col items-center justify-center shrink-0 select-none" style={{ width: 64, background: color.label }}>
+              <div key={tier} className="flex flex-col flex-1 min-w-[80px] rounded-lg border-2 overflow-hidden" style={{ borderColor: color.border }}>
+                {/* Tier label header */}
+                <div className="flex flex-col items-center justify-center py-2 select-none shrink-0" style={{ background: color.label }}>
                   <span className="font-bold text-white text-lg leading-none">{tier}</span>
                   {cost !== null && cost !== undefined && (
                     <span className="text-white text-xs opacity-90 mt-0.5">{cost}pt</span>
                   )}
                 </div>
-                <div className="flex flex-wrap gap-2 p-3 flex-1" style={{ background: color.bg, alignContent: 'flex-start' }}>
+                {/* Pokemon stacked vertically */}
+                <div className="flex flex-col items-center gap-1 p-1 flex-1" style={{ background: color.bg }}>
                   {byTier[tier].map(p => (
-                    <div key={p.id} className="flex flex-col items-center" style={{ width: 72 }}>
+                    <div key={p.id} className="flex flex-col items-center w-full">
                       <div className="relative">
                         {p.species_sprite_url ? (
                           <img src={p.species_sprite_url} alt={p.species_name} style={{ width: 56, height: 56, objectFit: 'contain' }} />
