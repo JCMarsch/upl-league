@@ -23,6 +23,7 @@ export default function PokemonTab() {
   const [importing, setImporting] = useState(false)
   const [applyingReg, setApplyingReg] = useState(false)
   const [togglingId, setTogglingId] = useState<number | null>(null)
+  const [seeding, setSeeding] = useState(false)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -70,6 +71,33 @@ export default function PokemonTab() {
       setPage(0)
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
     finally { setImporting(false); setLoading(false) }
+  }
+
+  const seedSpecies = async () => {
+    if (!confirm('Fetch all ~1300 Pokemon from PokeAPI and update the species database? This runs in the background and takes a few minutes.')) return
+    setSeeding(true); setMsg('Seeding started — this runs in the background. Check back in a few minutes.')
+    try {
+      await axios.post('/admin/seed-pokemon', {}, { withCredentials: true })
+      // Poll for completion
+      const poll = setInterval(async () => {
+        try {
+          const r = await axios.get('/admin/seed-pokemon/status', { withCredentials: true })
+          if (!r.data.running) {
+            clearInterval(poll)
+            setSeeding(false)
+            if (r.data.error) {
+              setMsg(`Seed failed: ${r.data.error}`)
+            } else {
+              const { created, updated, errors, skipped } = r.data.result
+              setMsg(`Seed complete! Created: ${created}, Updated: ${updated}, Errors: ${errors}, Skipped (cosmetic): ${skipped}`)
+            }
+          }
+        } catch { clearInterval(poll); setSeeding(false) }
+      }, 5000)
+    } catch (e: any) {
+      setSeeding(false)
+      setMsg(e.response?.data?.detail || 'Failed to start seed')
+    }
   }
 
   const applyRegulation = async (regulation: string) => {
@@ -129,6 +157,9 @@ export default function PokemonTab() {
             className="border rounded px-2 py-1 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
             {seasons.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          <button onClick={seedSpecies} disabled={seeding} className="px-3 py-1.5 rounded text-sm border" style={{ borderColor: '#8b5cf6', color: '#7c3aed' }}>
+            {seeding ? 'Seeding...' : 'Seed from PokeAPI'}
+          </button>
           <button onClick={importAll} disabled={importing} className="px-3 py-1.5 rounded text-sm border" style={{ borderColor: 'var(--color-border)' }}>
             {importing ? 'Importing...' : 'Import All Pokemon'}
           </button>

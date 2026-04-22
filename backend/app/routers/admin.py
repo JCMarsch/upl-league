@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from pydantic import BaseModel
+import threading
 from app.database import get_db
 from app.auth import require_admin
 from app.models.user import User
@@ -12,8 +13,28 @@ from app.models.schedule import Match, Game, GameStat
 from app.models.transaction import Trade, TradeAsset, Waiver
 from app.models.pokemon import SeasonPokemon, RosterPokemon
 from app.models.config import LeagueConfig
+from app.services.pokemon_seed import run_seed
+from app.database import SessionLocal
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Simple in-process seed status (reset on server restart)
+_seed_status: dict = {"running": False, "result": None, "error": None}
+_seed_lock = threading.Lock()
+
+
+def _do_seed():
+    global _seed_status
+    db = SessionLocal()
+    try:
+        result = run_seed(db)
+        with _seed_lock:
+            _seed_status = {"running": False, "result": result, "error": None}
+    except Exception as e:
+        with _seed_lock:
+            _seed_status = {"running": False, "result": None, "error": str(e)}
+    finally:
+        db.close()
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -313,3 +334,24 @@ def _execute_trade(db: Session, trade: Trade):
     trade.status = "executed"
     trade.resolved_at = datetime.now(timezone.utc)
     db.commit()
+
+
+@router.post("/seed-pokemon")
+def start_seed_pokemon(
+    background_tasks: BackgroundTasks,
+    _: User = Depends(require_admin),
+):
+    with _seed_lock:
+        if _seed_status["running"]:
+            raise HTTPException(status_code=409, detail="Seed already in progress")
+        _seed_status["running"] = True
+        _seed_status["result"] = None
+        _seed_status["error"] = None
+    background_tasks.add_task(_do_seed)
+    return {"status": "started"}
+
+
+@router.get("/seed-pokemon/status")
+def get_seed_status(_: User = Depends(require_admin)):
+    with _seed_lock:
+        return dict(_seed_status)

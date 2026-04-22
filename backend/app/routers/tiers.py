@@ -86,9 +86,13 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
             drafted_by_team_id=sp.drafted_by_team_id,
             species_name=sp.species.name if sp.species else None,
             species_sprite_url=sp.species.sprite_url if sp.species else None,
+            species_artwork_url=sp.species.artwork_url if sp.species else None,
+            species_shiny_sprite_url=sp.species.shiny_sprite_url if sp.species else None,
+            species_shiny_artwork_url=sp.species.shiny_artwork_url if sp.species else None,
             species_type1=sp.species.type1 if sp.species else None,
             species_type2=sp.species.type2 if sp.species else None,
             is_mega=sp.species.is_mega if sp.species else None,
+            format_legality=sp.species.format_legality if sp.species else None,
         )
         for sp in rows
     ]

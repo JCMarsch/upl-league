@@ -26,6 +26,9 @@ class PokemonSpecies(Base):
     total = Column(Integer, default=0)
     sprite_url = Column(String, nullable=True)
     artwork_url = Column(String, nullable=True)
+    shiny_sprite_url = Column(String, nullable=True)
+    shiny_artwork_url = Column(String, nullable=True)
+    format_legality = Column(JSON, default=dict)
     generation = Column(Integer, nullable=True)
     can_coexist_with = Column(JSON, default=list)
 

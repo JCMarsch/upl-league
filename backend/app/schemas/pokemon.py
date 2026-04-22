@@ -25,8 +25,12 @@ class SeasonPokemonOut(BaseModel):
     drafted_by_team_id: Optional[int]
     species_name: Optional[str] = None
     species_sprite_url: Optional[str] = None
+    species_artwork_url: Optional[str] = None
+    species_shiny_sprite_url: Optional[str] = None
+    species_shiny_artwork_url: Optional[str] = None
     species_type1: Optional[str] = None
     species_type2: Optional[str] = None
     is_mega: Optional[bool] = None
+    format_legality: Optional[dict] = None
 
     model_config = {"from_attributes": True}
