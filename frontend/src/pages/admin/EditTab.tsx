@@ -30,12 +30,26 @@ export default function EditTab() {
   useEffect(() => { axios.get('/admin/users', { withCredentials: true }).then(r => setUsers(r.data)) }, [])
   useEffect(() => {
     if (!sid) return
-    axios.get(`/seasons/${sid}/schedule`).then(r => {
-      const s = r.data
-      setMatches(s.flatMap((week: any) => week.matches || []))
-    }).catch(() => {
-      axios.get(`/seasons/${sid}/standings`).then(() => {}).catch(() => {})
-    })
+    axios.get(`/seasons/${sid}/schedule`)
+      .then(r => {
+        // ScheduleOut[] — filter to those with a match_id and remap to Match shape
+        const items: any[] = r.data
+        setMatches(
+          items
+            .filter((s: any) => s.match_id)
+            .map((s: any) => ({
+              id: s.match_id,
+              week_number: s.week_number,
+              home_team_id: s.home_team_id,
+              away_team_id: s.away_team_id,
+              home_games_won: s.home_games_won ?? 0,
+              away_games_won: s.away_games_won ?? 0,
+              status: s.match_status ?? s.status,
+              notes: null,
+            }))
+        )
+      })
+      .catch(() => {})
     axios.get(`/seasons/${sid}/teams`).then(r => setTeams(r.data))
   }, [sid])
 
