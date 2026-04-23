@@ -7,7 +7,7 @@ from app.models.season import Season
 from app.models.team import Team
 from app.models.schedule import Schedule, Match, Game, GameStat, GameKillEvent
 from app.models.user import User
-from app.schemas.match import MatchSubmit, MatchOut, ScheduleOut, GameStatCreate, KillEventCreate, KillEventOut, GameOut
+from app.schemas.match import MatchSubmit, MatchOut, ScheduleOut, GameStatCreate, KillEventCreate, KillEventOut, GameOut, GameCreate, ReplayParseRequest
 from app.services.schedule_service import generate_round_robin
 from app.services import stats_service
 from typing import List
@@ -163,6 +163,71 @@ def confirm_result(
 
     db.refresh(match)
     return match
+
+
+@router.post("/matches/{match_id}/games")
+def create_game(
+    match_id: int,
+    data: GameCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    is_admin = any(r in current_user.roles.split(",") for r in ["admin", "superadmin"])
+    is_participant = db.query(Team).filter(
+        (Team.id == match.home_team_id) | (Team.id == match.away_team_id),
+        Team.manager_id == current_user.id,
+    ).first() is not None
+    if not is_admin and not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    existing = db.query(Game).filter(
+        Game.match_id == match_id,
+        Game.game_number == data.game_number,
+    ).first()
+
+    if existing:
+        existing.winner_team_id = data.winner_team_id
+        existing.loser_team_id = data.loser_team_id
+        existing.replay_url = data.replay_url
+        existing.replay_source = data.replay_source
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    game = Game(
+        match_id=match_id,
+        game_number=data.game_number,
+        winner_team_id=data.winner_team_id,
+        loser_team_id=data.loser_team_id,
+        replay_url=data.replay_url,
+        replay_source=data.replay_source,
+    )
+    db.add(game)
+    db.commit()
+    db.refresh(game)
+    return game
+
+
+@router.post("/parse-replay")
+def parse_replay_endpoint(
+    data: ReplayParseRequest,
+    current_user: User = Depends(get_current_user),
+):
+    import re as _re
+    m = _re.search(r"replay\.pokemonshowdown\.com/([^/?#]+)", data.replay_url)
+    replay_id = m.group(1) if m else data.replay_url.strip("/")
+
+    from app.services.replay_parser import parse_replay_from_url
+    result = parse_replay_from_url(replay_id)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
 
 
 @router.post("/matches/{match_id}/games/{game_id}/stats")

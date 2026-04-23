@@ -60,7 +60,10 @@ def parse_replay_log(log: str) -> dict:
     last_move = None  # (attacker_team, attacker_pokemon, move_name, target)
     active = {}  # position (p1a, p1b, p2a, p2b) -> (team, pokemon)
 
-    turn_faints = []  # faints this turn to attribute
+    current_turn = 0
+    kill_events_list = []
+    winner_side = None
+    turn_faints = []
     in_turn = False
 
     for line in lines:
@@ -87,7 +90,6 @@ def parse_replay_log(log: str) -> dict:
             if len(parts) < 5:
                 continue
             position = parts[2].split(":")[0]  # e.g. p1a
-            nickname = parts[2].split(": ")[1] if ": " in parts[2] else parts[2]
             species = parts[3].split(",")[0].strip()
             team = "p1" if position.startswith("p1") else "p2"
 
@@ -105,9 +107,17 @@ def parse_replay_log(log: str) -> dict:
                     p2_leads.append(species)
 
         elif cmd == "turn":
+            current_turn = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else current_turn + 1
             in_turn = True
             last_move = None
             turn_faints = []
+
+        elif cmd == "win":
+            winner_name = parts[2].strip() if len(parts) > 2 else ""
+            if winner_name == p1_name:
+                winner_side = "p1"
+            elif winner_name == p2_name:
+                winner_side = "p2"
 
         elif cmd == "move":
             if len(parts) < 5:
@@ -129,8 +139,6 @@ def parse_replay_log(log: str) -> dict:
             if fainted_team not in deaths:
                 deaths[(fainted_team, fainted_pokemon)] = {"direct": 0, "passive": 0}
 
-            # Determine if direct or passive
-            # Check if the previous damage was passive
             is_passive = False
             for passive_src in PASSIVE_DAMAGE_SOURCES:
                 if line.lower().find(passive_src) >= 0:
@@ -138,9 +146,9 @@ def parse_replay_log(log: str) -> dict:
                     break
 
             if last_move and last_move[3] and position in last_move[3]:
-                is_passive = False  # direct from last move
+                is_passive = False
             elif not last_move:
-                is_passive = True  # no move this turn = passive
+                is_passive = True
 
             killer_team = "p2" if fainted_team == "p1" else "p1"
             if last_move and last_move[0] == killer_team:
@@ -168,6 +176,16 @@ def parse_replay_log(log: str) -> dict:
                         kills[key] = {"direct": 0, "passive": 0}
                     kills[key]["direct"] += 1
 
+            kill_events_list.append({
+                "turn_number": current_turn,
+                "attacker_side": killer_team if killer_pokemon else None,
+                "attacker_pokemon": killer_pokemon,
+                "defender_side": fainted_team,
+                "defender_pokemon": fainted_pokemon,
+                "move_name": last_move[2] if last_move and not is_passive else None,
+                "kill_type": "passive" if is_passive else "direct",
+            })
+
     return {
         "p1_name": p1_name,
         "p2_name": p2_name,
@@ -177,6 +195,8 @@ def parse_replay_log(log: str) -> dict:
         "p2_brought": p2_brought[:4],
         "kills": {f"{k[0]}/{k[1]}": v for k, v in kills.items()},
         "deaths": {f"{k[0]}/{k[1]}": v for k, v in deaths.items()},
+        "kill_events": kill_events_list,
+        "winner_side": winner_side,
     }
 
 

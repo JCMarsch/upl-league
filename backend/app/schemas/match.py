@@ -35,6 +35,18 @@ class GameStatOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GameCreate(BaseModel):
+    game_number: int
+    winner_team_id: Optional[int] = None
+    loser_team_id: Optional[int] = None
+    replay_url: Optional[str] = None
+    replay_source: Optional[str] = None
+
+
+class ReplayParseRequest(BaseModel):
+    replay_url: str
+
+
 class KillEventCreate(BaseModel):
     turn_number: int
     attacker_team_id: int

@@ -28,6 +28,7 @@ class RosterPokemonOut(BaseModel):
     tera_type: Optional[str]
     is_active: bool
     # Species info
+    species_id: Optional[int] = None
     species_name: Optional[str] = None
     species_sprite_url: Optional[str] = None
     species_artwork_url: Optional[str] = None

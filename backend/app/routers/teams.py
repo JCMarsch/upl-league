@@ -61,6 +61,7 @@ def get_team(team_id: int, db: Session = Depends(get_db)):
             move4=rp.move4,
             tera_type=rp.tera_type,
             is_active=rp.is_active,
+            species_id=species.id if species else None,
             species_name=species.name if species else None,
             species_sprite_url=species.sprite_url if species else None,
             species_artwork_url=species.artwork_url if species else None,
