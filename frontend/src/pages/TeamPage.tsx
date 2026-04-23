@@ -354,6 +354,7 @@ interface AvailPokemon {
   tier: string | null
   point_cost: number | null
   drafted_by_team_id: number | null
+  is_available?: boolean
 }
 
 function WishlistSection({ teamId, seasonId }: { teamId: number; seasonId: number }) {
