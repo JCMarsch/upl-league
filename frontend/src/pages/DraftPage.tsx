@@ -206,6 +206,7 @@ export default function DraftPage() {
     try {
       await axios.post(`/draft/${seasonId}/reset`, {}, { withCredentials: true })
       setPendingPick(null)
+      setPicks([])
       await fetchState()
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Reset failed') }
   }
@@ -226,7 +227,7 @@ export default function DraftPage() {
 
   if (loading) return <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Loading draft...</div>
 
-  if (!draftState) {
+  if (!draftState || draftState.status === 'pending') {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Draft Room</h1>
