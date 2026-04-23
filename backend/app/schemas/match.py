@@ -20,6 +20,60 @@ class GameStatCreate(BaseModel):
     passive_deaths: int = 0
 
 
+class GameStatOut(BaseModel):
+    id: int
+    game_id: int
+    team_id: int
+    species_id: int
+    was_brought: bool
+    was_lead: bool
+    direct_kills: int
+    passive_kills: int
+    direct_deaths: int
+    passive_deaths: int
+
+    model_config = {"from_attributes": True}
+
+
+class KillEventCreate(BaseModel):
+    turn_number: int
+    attacker_team_id: int
+    attacker_species_id: int
+    defender_team_id: int
+    defender_species_id: int
+    move_name: Optional[str] = None
+    kill_type: str = "direct"
+
+
+class KillEventOut(BaseModel):
+    id: int
+    game_id: int
+    turn_number: int
+    attacker_team_id: int
+    attacker_species_id: int
+    defender_team_id: int
+    defender_species_id: int
+    move_name: Optional[str]
+    kill_type: str
+
+    model_config = {"from_attributes": True}
+
+
+class GameOut(BaseModel):
+    id: int
+    match_id: int
+    game_number: int
+    winner_team_id: Optional[int]
+    loser_team_id: Optional[int]
+    replay_url: Optional[str]
+    replay_source: Optional[str]
+    replay_parsed: bool
+    stats: List[GameStatOut] = []
+    kill_events: List[KillEventOut] = []
+
+    model_config = {"from_attributes": True}
+
+
 class MatchOut(BaseModel):
     id: int
     season_id: int

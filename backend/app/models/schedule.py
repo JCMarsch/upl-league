@@ -66,6 +66,7 @@ class Game(Base):
     winner_team = relationship("Team", foreign_keys=[winner_team_id])
     loser_team = relationship("Team", foreign_keys=[loser_team_id])
     stats = relationship("GameStat", back_populates="game")
+    kill_events = relationship("GameKillEvent", back_populates="game", order_by="GameKillEvent.turn_number")
 
 
 class GameStat(Base):
@@ -86,3 +87,24 @@ class GameStat(Base):
     game = relationship("Game", back_populates="stats")
     team = relationship("Team")
     species = relationship("PokemonSpecies")
+
+
+class GameKillEvent(Base):
+    __tablename__ = "game_kill_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    turn_number = Column(Integer, nullable=False)
+    attacker_team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    attacker_species_id = Column(Integer, ForeignKey("pokemon_species.id"), nullable=False)
+    defender_team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    defender_species_id = Column(Integer, ForeignKey("pokemon_species.id"), nullable=False)
+    move_name = Column(String, nullable=True)
+    # direct / passive / hazard / status / recoil
+    kill_type = Column(String, nullable=False, default="direct")
+
+    game = relationship("Game", back_populates="kill_events")
+    attacker_team = relationship("Team", foreign_keys=[attacker_team_id])
+    attacker_species = relationship("PokemonSpecies", foreign_keys=[attacker_species_id])
+    defender_team = relationship("Team", foreign_keys=[defender_team_id])
+    defender_species = relationship("PokemonSpecies", foreign_keys=[defender_species_id])

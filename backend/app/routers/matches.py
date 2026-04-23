@@ -5,9 +5,9 @@ from app.database import get_db
 from app.auth import get_current_user, require_admin
 from app.models.season import Season
 from app.models.team import Team
-from app.models.schedule import Schedule, Match, Game, GameStat
+from app.models.schedule import Schedule, Match, Game, GameStat, GameKillEvent
 from app.models.user import User
-from app.schemas.match import MatchSubmit, MatchOut, ScheduleOut, GameStatCreate
+from app.schemas.match import MatchSubmit, MatchOut, ScheduleOut, GameStatCreate, KillEventCreate, KillEventOut, GameOut
 from app.services.schedule_service import generate_round_robin
 from app.services import stats_service
 from typing import List
@@ -196,3 +196,78 @@ def submit_game_stats(
 
     db.commit()
     return {"message": "Stats saved", "count": len(stats)}
+
+
+@router.post("/games/{game_id}/kill-events", response_model=List[KillEventOut])
+def create_kill_events(
+    game_id: int,
+    events: List[KillEventCreate],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    match = db.query(Match).filter(Match.id == game.match_id).first()
+    is_admin = any(r in current_user.roles.split(",") for r in ["admin", "superadmin"])
+    is_participant = db.query(Team).filter(
+        (Team.id == match.home_team_id) | (Team.id == match.away_team_id),
+        Team.manager_id == current_user.id,
+    ).first() is not None
+    if not is_admin and not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    db.query(GameKillEvent).filter(GameKillEvent.game_id == game_id).delete()
+
+    created = []
+    for e in events:
+        ke = GameKillEvent(
+            game_id=game_id,
+            turn_number=e.turn_number,
+            attacker_team_id=e.attacker_team_id,
+            attacker_species_id=e.attacker_species_id,
+            defender_team_id=e.defender_team_id,
+            defender_species_id=e.defender_species_id,
+            move_name=e.move_name,
+            kill_type=e.kill_type,
+        )
+        db.add(ke)
+        created.append(ke)
+
+    db.commit()
+    for ke in created:
+        db.refresh(ke)
+    return created
+
+
+@router.get("/games/{game_id}/kill-events", response_model=List[KillEventOut])
+def get_kill_events(game_id: int, db: Session = Depends(get_db)):
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return (
+        db.query(GameKillEvent)
+        .filter(GameKillEvent.game_id == game_id)
+        .order_by(GameKillEvent.turn_number)
+        .all()
+    )
+
+
+@router.get("/matches/{match_id}/games", response_model=List[GameOut])
+def get_match_games(match_id: int, db: Session = Depends(get_db)):
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(status_code=404, detail="Match not found")
+    from sqlalchemy.orm import joinedload
+    games = (
+        db.query(Game)
+        .options(
+            joinedload(Game.stats),
+            joinedload(Game.kill_events),
+        )
+        .filter(Game.match_id == match_id)
+        .order_by(Game.game_number)
+        .all()
+    )
+    return games
