@@ -112,7 +112,7 @@ def start_draft(
     return draft
 
 
-@router.post("/{season_id}/pick", response_model=DraftPickOut)
+@router.post("/{season_id}/pick", response_model=PickConfirmedOut)
 def make_pick(
     season_id: int,
     data: DraftPickCreate,
