@@ -2,11 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useActiveSeason } from '../hooks/useActiveSeason'
-import { TIERS, TIER_COLORS } from '../constants/tiers'
-
-const MEGA_BANNER_COLORS: Record<string, string> = {
-  S: '#4c1d95', A: '#6d28d9', B: '#7c3aed', C: '#8b5cf6', D: '#a78bfa', Free: '#c4b5fd',
-}
+import { TIERS, TIER_COLORS, MEGA_BANNER_COLORS } from '../constants/tiers'
 
 interface DraftState {
   id: number
@@ -365,7 +361,7 @@ export default function DraftPage() {
               onClick={() => { setMegaTab(true); setTierFilter('') }}
               className="flex-1 py-1.5 text-sm font-medium transition-colors"
               style={{
-                background: megaTab ? '#db2777' : 'var(--color-surface)',
+                background: megaTab ? TIER_COLORS['Mega'].label : 'var(--color-surface)',
                 color: megaTab ? '#fff' : 'var(--color-text-muted)',
               }}
             >

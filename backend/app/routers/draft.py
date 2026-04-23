@@ -10,7 +10,7 @@ from app.auth import require_admin, get_current_user
 from app.models.season import Season
 from app.models.team import Team
 from app.models.draft import Draft, DraftOrder, DraftPick
-from app.models.pokemon import SeasonPokemon, RosterPokemon
+from app.models.pokemon import SeasonPokemon, RosterPokemon, PokemonSpecies
 from app.models.user import User
 from app.schemas.draft import DraftPickCreate, DraftPickOut, DraftStateOut, PickConfirmedOut
 from app.services import draft_service
@@ -156,6 +156,26 @@ def make_pick(
     picking_team = db.query(Team).filter(Team.id == draft.current_team_id).first()
     if (sp.point_cost or 0) > picking_team.points_remaining:
         raise HTTPException(status_code=400, detail="Insufficient points budget")
+
+    # Enforce mega cap
+    required_slots = season.required_slots or {}
+    max_megas = required_slots.get('mega', 0)
+    if max_megas > 0:
+        is_mega = db.query(PokemonSpecies.is_mega).filter(PokemonSpecies.id == sp.species_id).scalar()
+        if is_mega:
+            current_mega_count = (
+                db.query(RosterPokemon)
+                .join(SeasonPokemon, SeasonPokemon.id == RosterPokemon.season_pokemon_id)
+                .join(PokemonSpecies, PokemonSpecies.id == SeasonPokemon.species_id)
+                .filter(
+                    RosterPokemon.team_id == draft.current_team_id,
+                    SeasonPokemon.season_id == season_id,
+                    PokemonSpecies.is_mega == True,
+                )
+                .count()
+            )
+            if current_mega_count >= max_megas:
+                raise HTTPException(status_code=400, detail=f"Mega slot already filled (max {max_megas} per team)")
 
     team_ids = [
         t.id for t in db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()
