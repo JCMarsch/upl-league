@@ -11,6 +11,7 @@ interface DraftState {
   current_pick_number: number
   current_team_id: number | null
   timer_seconds: number | null
+  pick_started_at: string | null
 }
 
 interface DraftPick {
@@ -50,6 +51,13 @@ const TYPE_COLORS: Record<string, string> = {
   Fairy: '#D685AD', Normal: '#A8A77A',
 }
 
+function getTimeLeft(draftState: DraftState): number | null {
+  if (!draftState.timer_seconds || !draftState.pick_started_at) return null
+  const startMs = new Date(draftState.pick_started_at).getTime()
+  const expiryMs = startMs + draftState.timer_seconds * 1000
+  return Math.max(0, Math.ceil((expiryMs - Date.now()) / 1000))
+}
+
 export default function DraftPage() {
   const { user } = useAuthStore()
   const { seasonId } = useActiveSeason()
@@ -63,12 +71,16 @@ export default function DraftPage() {
   const [picking, setPicking] = useState(false)
   const [msg, setMsg] = useState('')
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
+  const [pendingPick, setPendingPick] = useState<SeasonPokemon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isAdmin = user && (user.roles.includes('admin') || user.roles.includes('superadmin'))
   const myTeam = teams.find(t => t.manager_id === user?.id)
   const isMyTurn = draftState?.current_team_id === myTeam?.id
+  const pickingTeam = teams.find(t => t.id === draftState?.current_team_id)
+
+  const canPick = draftState?.status === 'active' && (isMyTurn || isAdmin)
 
   const fetchState = useCallback(async () => {
     if (!seasonId) return
@@ -87,19 +99,19 @@ export default function DraftPage() {
     fetchState().finally(() => setLoading(false))
   }, [seasonId, fetchState])
 
-  // Timer
+  // Timer — synced from server pick_started_at
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
-    if (draftState?.status === 'active' && draftState.timer_seconds) {
-      setTimeLeft(draftState.timer_seconds)
+    if (draftState?.status === 'active' && draftState.timer_seconds && draftState.pick_started_at) {
+      setTimeLeft(getTimeLeft(draftState))
       timerRef.current = setInterval(() => {
-        setTimeLeft(t => (t !== null && t > 0 ? t - 1 : 0))
-      }, 1000)
+        setTimeLeft(getTimeLeft(draftState))
+      }, 500)
     } else {
       setTimeLeft(null)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [draftState?.status, draftState?.current_pick_number])
+  }, [draftState?.status, draftState?.current_pick_number, draftState?.pick_started_at])
 
   // WebSocket
   useEffect(() => {
@@ -113,24 +125,26 @@ export default function DraftPage() {
       if (msg.type === 'pick') {
         fetchState()
         setPicks(prev => [...prev, msg.pick])
+        setPendingPick(null)
       } else if (msg.type === 'state_change') {
         fetchState()
+        setPendingPick(null)
       }
     }
     ws.onclose = () => {
-      // Reconnect after 2s
       setTimeout(() => { fetchState() }, 2000)
     }
     return () => ws.close()
   }, [seasonId, fetchState])
 
-  const makePick = async (spId: number) => {
-    if (!seasonId || !isMyTurn) return
+  const confirmPick = async () => {
+    if (!pendingPick || !seasonId) return
     setPicking(true); setMsg('')
     try {
-      await axios.post(`/draft/${seasonId}/pick`, { season_pokemon_id: spId }, { withCredentials: true })
+      await axios.post(`/draft/${seasonId}/pick`, { season_pokemon_id: pendingPick.id }, { withCredentials: true })
       await fetchState()
       wsRef.current?.send(JSON.stringify({ type: 'state_change' }))
+      setPendingPick(null)
     } catch (e: any) {
       setMsg(e.response?.data?.detail || 'Pick failed')
     } finally { setPicking(false) }
@@ -201,16 +215,32 @@ export default function DraftPage() {
             Pick #{draftState.current_pick_number} · Status: {draftState.status}
           </div>
           <div className="text-lg font-bold mt-0.5">
-            {draftState.status === 'active'
-              ? <><span className={isMyTurn ? 'text-green-500' : ''}>On the clock: {teamName(draftState.current_team_id)}</span>{isMyTurn && ' (Your pick!)'}</>
-              : draftState.status === 'paused' ? '⏸ Draft Paused'
-              : draftState.status === 'complete' ? '✅ Draft Complete'
-              : 'Draft not started'}
+            {draftState.status === 'active' ? (
+              <>
+                <span className={isMyTurn ? 'text-green-500' : ''}>
+                  On the clock: {teamName(draftState.current_team_id)}
+                </span>
+                {isAdmin && pickingTeam && (
+                  <span className="ml-2 text-sm font-normal px-2 py-0.5 rounded" style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+                    Picking for: {pickingTeam.name}
+                  </span>
+                )}
+                {isMyTurn && !isAdmin && (
+                  <span className="ml-2 text-green-500 text-sm"> ← Your pick!</span>
+                )}
+              </>
+            ) : draftState.status === 'paused' ? (
+              '⏸ Draft Paused'
+            ) : draftState.status === 'complete' ? (
+              '✅ Draft Complete'
+            ) : (
+              'Draft not started'
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">
           {timeLeft !== null && (
-            <div className="text-2xl font-mono font-bold" style={{ color: timeLeft < 30 ? '#ef4444' : 'var(--color-text)' }}>
+            <div className="text-2xl font-mono font-bold" style={{ color: timeLeft < 30 ? '#ef4444' : timeLeft < 60 ? '#f59e0b' : 'var(--color-text)' }}>
               {String(Math.floor(timeLeft / 60)).padStart(2, '0')}:{String(timeLeft % 60).padStart(2, '0')}
             </div>
           )}
@@ -221,6 +251,41 @@ export default function DraftPage() {
           )}
         </div>
       </div>
+
+      {/* Pending pick confirmation banner */}
+      {pendingPick && (
+        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border-2" style={{ borderColor: 'var(--color-primary)', background: 'var(--color-surface)' }}>
+          <div className="flex items-center gap-3">
+            {pendingPick.species_sprite_url && (
+              <img src={pendingPick.species_sprite_url} alt={pendingPick.species_name ?? ''} className="w-12 h-12 object-contain" />
+            )}
+            <div>
+              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Confirm pick?</div>
+              <div className="font-bold">{pendingPick.species_name}</div>
+              <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                {pendingPick.tier} · {pendingPick.point_cost ?? '?'} pts
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={confirmPick}
+              disabled={picking}
+              className="px-4 py-2 rounded text-white font-semibold text-sm disabled:opacity-50"
+              style={{ background: '#22c55e' }}
+            >
+              {picking ? 'Picking…' : 'Confirm'}
+            </button>
+            <button
+              onClick={() => setPendingPick(null)}
+              className="px-4 py-2 rounded text-sm border"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {msg && <p className="text-sm text-red-500">{msg}</p>}
 
@@ -235,8 +300,12 @@ export default function DraftPage() {
               className="flex-1 border rounded px-3 py-1.5 text-sm"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
             />
-            <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
-              className="border rounded px-2 py-1.5 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+            <select
+              value={tierFilter}
+              onChange={e => setTierFilter(e.target.value)}
+              className="border rounded px-2 py-1.5 text-sm"
+              style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+            >
               <option value="">All Tiers</option>
               {TIERS.map(t => <option key={t}>{t}</option>)}
             </select>
@@ -257,7 +326,10 @@ export default function DraftPage() {
                     <div
                       key={p.id}
                       className="flex items-center gap-3 px-3 py-2 border-b"
-                      style={{ borderColor: 'var(--color-border)' }}
+                      style={{
+                        borderColor: 'var(--color-border)',
+                        background: pendingPick?.id === p.id ? 'color-mix(in srgb, var(--color-primary) 10%, var(--color-surface))' : undefined,
+                      }}
                     >
                       {p.species_sprite_url && (
                         <img src={p.species_sprite_url} alt={p.species_name ?? ''} className="w-10 h-10 object-contain flex-shrink-0" />
@@ -275,14 +347,14 @@ export default function DraftPage() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="text-sm font-mono">{p.point_cost ?? '?'} pts</div>
-                        {(isMyTurn || isAdmin) && draftState.status === 'active' && (
+                        {canPick && (
                           <button
-                            onClick={() => makePick(p.id)}
-                            disabled={picking}
+                            onClick={() => setPendingPick(p)}
+                            disabled={picking || pendingPick?.id === p.id}
                             className="text-xs px-2 py-0.5 rounded text-white mt-1 disabled:opacity-50"
-                            style={{ background: 'var(--color-primary)' }}
+                            style={{ background: pendingPick?.id === p.id ? '#6b7280' : 'var(--color-primary)' }}
                           >
-                            Pick
+                            {pendingPick?.id === p.id ? 'Selected' : 'Pick'}
                           </button>
                         )}
                       </div>
@@ -299,8 +371,15 @@ export default function DraftPage() {
                     {p.species_sprite_url && <img src={p.species_sprite_url} alt={p.species_name ?? ''} className="w-10 h-10 object-contain" />}
                     <div className="flex-1"><div className="font-medium text-sm">{p.species_name}</div></div>
                     <div className="text-sm font-mono">{p.point_cost ?? '?'} pts</div>
-                    {(isMyTurn || isAdmin) && draftState.status === 'active' && (
-                      <button onClick={() => makePick(p.id)} disabled={picking} className="text-xs px-2 py-0.5 rounded text-white disabled:opacity-50" style={{ background: 'var(--color-primary)' }}>Pick</button>
+                    {canPick && (
+                      <button
+                        onClick={() => setPendingPick(p)}
+                        disabled={picking || pendingPick?.id === p.id}
+                        className="text-xs px-2 py-0.5 rounded text-white disabled:opacity-50"
+                        style={{ background: 'var(--color-primary)' }}
+                      >
+                        Pick
+                      </button>
                     )}
                   </div>
                 ))}

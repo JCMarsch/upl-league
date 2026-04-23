@@ -25,5 +25,6 @@ class DraftStateOut(BaseModel):
     current_pick_number: int
     current_team_id: Optional[int]
     timer_seconds: Optional[int]
+    pick_started_at: Optional[datetime]
 
     model_config = {"from_attributes": True}

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 import json
@@ -94,16 +95,20 @@ def _run_scheduled_jobs():
 
 @asynccontextmanager
 async def lifespan(app):
-    if settings.environment == "production":
-        from apscheduler.schedulers.background import BackgroundScheduler
-        scheduler = BackgroundScheduler()
-        scheduler.add_job(_run_scheduled_jobs, "interval", minutes=5)
-        scheduler.start()
-        logger.info("Scheduler started")
-        yield
-        scheduler.shutdown()
-    else:
-        yield
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from app import scheduler as draft_scheduler
+    from app.routers.draft import broadcast as draft_broadcast
+
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_run_scheduled_jobs, "interval", minutes=5)
+    scheduler.start()
+
+    loop = asyncio.get_running_loop()
+    draft_scheduler.init(scheduler, loop, draft_broadcast)
+
+    logger.info("Scheduler started")
+    yield
+    scheduler.shutdown()
 
 
 app = FastAPI(title="UPL API", version="0.1.0", lifespan=lifespan)

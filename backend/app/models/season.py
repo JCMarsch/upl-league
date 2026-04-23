@@ -14,6 +14,8 @@ class Season(Base):
     status = Column(String, default="setup")  # setup/draft/regular/playoffs/complete
     draft_type = Column(String, default="snake")  # snake or auction
     draft_timer_seconds = Column(Integer, nullable=True)
+    draft_timer_mode = Column(String, default="fixed")  # fixed or reducing
+    draft_timer_end_seconds = Column(Integer, nullable=True)  # end timer for reducing mode
     points_budget = Column(Integer, default=100)
     roster_size = Column(Integer, default=10)
     free_pick_slots = Column(Integer, default=0)

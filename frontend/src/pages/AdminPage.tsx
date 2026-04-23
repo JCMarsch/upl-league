@@ -8,8 +8,9 @@ import UsersTab from './admin/UsersTab'
 import WaiversTab from './admin/WaiversTab'
 import TradesTab from './admin/TradesTab'
 import EditTab from './admin/EditTab'
+import DraftTab from './admin/DraftTab'
 
-type Tab = 'seasons' | 'tier-list' | 'tier-pricing' | 'pokemon' | 'teams' | 'users' | 'waivers' | 'trades' | 'edit'
+type Tab = 'seasons' | 'tier-list' | 'tier-pricing' | 'pokemon' | 'teams' | 'draft' | 'users' | 'waivers' | 'trades' | 'edit'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'seasons', label: 'Seasons' },
@@ -17,6 +18,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'tier-pricing', label: 'Tier Pricing' },
   { key: 'pokemon', label: 'Pokemon (Table)' },
   { key: 'teams', label: 'Teams' },
+  { key: 'draft', label: 'Draft Order' },
   { key: 'users', label: 'Users' },
   { key: 'waivers', label: 'Waivers' },
   { key: 'trades', label: 'Trades' },
@@ -52,6 +54,7 @@ export default function AdminPage() {
       {tab === 'tier-pricing' && <TierPricingTab />}
       {tab === 'pokemon' && <PokemonTab />}
       {tab === 'teams' && <TeamsTab />}
+      {tab === 'draft' && <DraftTab />}
       {tab === 'users' && <UsersTab />}
       {tab === 'waivers' && <WaiversTab />}
       {tab === 'trades' && <TradesTab />}

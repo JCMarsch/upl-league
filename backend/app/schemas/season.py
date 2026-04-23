@@ -9,6 +9,8 @@ class SeasonCreate(BaseModel):
     year: int
     draft_type: str = "snake"
     draft_timer_seconds: Optional[int] = None
+    draft_timer_mode: str = "fixed"
+    draft_timer_end_seconds: Optional[int] = None
     points_budget: int = 100
     roster_size: int = 10
     free_pick_slots: int = 0
@@ -25,6 +27,8 @@ class SeasonUpdate(BaseModel):
     format: Optional[str] = None
     draft_type: Optional[str] = None
     draft_timer_seconds: Optional[int] = None
+    draft_timer_mode: Optional[str] = None
+    draft_timer_end_seconds: Optional[int] = None
     points_budget: Optional[int] = None
     roster_size: Optional[int] = None
     free_pick_slots: Optional[int] = None
@@ -41,6 +45,8 @@ class SeasonOut(BaseModel):
     status: str
     draft_type: str
     draft_timer_seconds: Optional[int]
+    draft_timer_mode: str = "fixed"
+    draft_timer_end_seconds: Optional[int] = None
     points_budget: int
     roster_size: int
     required_slots: Dict[str, Any]

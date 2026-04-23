@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict
 import json
 
@@ -33,6 +33,29 @@ async def broadcast(season_id: int, message: dict):
             _connections[season_id].remove(ws)
 
 
+def _compute_round_timer(season: Season, round_number: int) -> int | None:
+    """Compute timer seconds for a given round (supports fixed and reducing modes)."""
+    if not season.draft_timer_seconds:
+        return None
+    if season.draft_timer_mode == 'reducing' and season.draft_timer_end_seconds is not None:
+        num_rounds = season.roster_size or 10
+        if num_rounds <= 1:
+            return season.draft_timer_seconds
+        t = (round_number - 1) / (num_rounds - 1)
+        return round(season.draft_timer_seconds + t * (season.draft_timer_end_seconds - season.draft_timer_seconds))
+    return season.draft_timer_seconds
+
+
+def _schedule_pick_timer(draft: Draft, season: Season):
+    """Schedule the autopick APScheduler job for the current pick."""
+    from app import scheduler as draft_scheduler
+    timer = draft.timer_seconds
+    if not timer or not draft.pick_started_at:
+        return
+    run_at = draft.pick_started_at + timedelta(seconds=timer + 1.5)
+    draft_scheduler.schedule_autopick(season.id, draft.current_pick_number, run_at)
+
+
 @router.post("/{season_id}/start", response_model=DraftStateOut)
 def start_draft(
     season_id: int,
@@ -49,7 +72,7 @@ def start_draft(
     if existing and existing.status == "active":
         raise HTTPException(status_code=400, detail="Draft already active")
 
-    teams = db.query(Team).filter(Team.season_id == season_id).all()
+    teams = db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()
     team_ids = [t.id for t in teams]
     if not team_ids:
         raise HTTPException(status_code=400, detail="No teams in season")
@@ -64,22 +87,28 @@ def start_draft(
         db.add(draft)
         db.flush()
 
-        # Generate snake order
-        total_picks = len(team_ids) * season.roster_size
-        num_rounds = season.roster_size
-        for entry in draft_service.generate_snake_order(team_ids, num_rounds):
-            order = DraftOrder(draft_id=draft.id, **entry)
-            db.add(order)
+        # Use custom order if set, otherwise generate snake
+        existing_order = db.query(DraftOrder).filter(DraftOrder.draft_id == draft.id).count()
+        if existing_order == 0:
+            num_rounds = season.roster_size
+            for entry in draft_service.generate_snake_order(team_ids, num_rounds):
+                order = DraftOrder(draft_id=draft.id, **entry)
+                db.add(order)
     else:
         draft = existing
         draft.status = "active"
 
+    round_number = 1
+    timer = _compute_round_timer(season, round_number)
+    draft.timer_seconds = timer
     draft.current_team_id = draft_service.get_next_team_snake(
         draft, team_ids, draft.current_pick_number, len(team_ids)
     )
     draft.pick_started_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(draft)
+
+    _schedule_pick_timer(draft, season)
     return draft
 
 
@@ -132,6 +161,10 @@ def make_pick(
         t.id for t in db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()
     ]
 
+    # Cancel any pending autopick for this pick
+    from app import scheduler as draft_scheduler
+    draft_scheduler.cancel_autopick(season_id)
+
     pick = draft_service.make_pick(db, draft, draft.current_team_id, sp.id, season, team_ids)
 
     # Add to roster
@@ -139,6 +172,18 @@ def make_pick(
     db.add(roster_entry)
     db.commit()
 
+    # Update round timer for reducing mode
+    db.refresh(draft)
+    if draft.status == 'active' and season.draft_timer_seconds:
+        num_teams = len(team_ids)
+        round_number = (draft.current_pick_number - 1) // num_teams + 1
+        timer = _compute_round_timer(season, round_number)
+        if timer != draft.timer_seconds:
+            draft.timer_seconds = timer
+            db.commit()
+            db.refresh(draft)
+
+    _schedule_pick_timer(draft, season)
     return pick
 
 
@@ -148,9 +193,11 @@ def pause_draft(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    from app import scheduler as draft_scheduler
     draft = db.query(Draft).filter(Draft.season_id == season_id).first()
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+    draft_scheduler.cancel_autopick(season_id)
     draft.status = "paused"
     db.commit()
     return {"status": "paused"}
@@ -165,9 +212,11 @@ def resume_draft(
     draft = db.query(Draft).filter(Draft.season_id == season_id).first()
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
+    season = db.query(Season).filter(Season.id == season_id).first()
     draft.status = "active"
     draft.pick_started_at = datetime.now(timezone.utc)
     db.commit()
+    _schedule_pick_timer(draft, season)
     return {"status": "active"}
 
 
@@ -177,6 +226,64 @@ def get_draft_state(season_id: int, db: Session = Depends(get_db)):
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
     return draft
+
+
+@router.get("/{season_id}/order")
+def get_draft_order(season_id: int, db: Session = Depends(get_db)):
+    """Return the draft order for admin display/editing."""
+    draft = db.query(Draft).filter(Draft.season_id == season_id).first()
+    if not draft:
+        return []
+    orders = (
+        db.query(DraftOrder)
+        .filter(DraftOrder.draft_id == draft.id, DraftOrder.round_number == 1)
+        .order_by(DraftOrder.pick_position)
+        .all()
+    )
+    teams = {t.id: t for t in db.query(Team).filter(Team.season_id == season_id).all()}
+    return [
+        {"team_id": o.team_id, "team_name": teams[o.team_id].name if o.team_id in teams else "?"}
+        for o in orders
+    ]
+
+
+@router.post("/{season_id}/order")
+def set_draft_order(
+    season_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Set the draft order (team_ids in pick order). Regenerates all rounds as snake."""
+    team_ids: List[int] = data.get("team_ids", [])
+    if not team_ids:
+        raise HTTPException(status_code=400, detail="team_ids required")
+
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=404, detail="Season not found")
+
+    draft = db.query(Draft).filter(Draft.season_id == season_id).first()
+    if not draft:
+        # Create draft record if it doesn't exist yet
+        draft = Draft(season_id=season_id, status="pending", current_pick_number=1,
+                      timer_seconds=season.draft_timer_seconds)
+        db.add(draft)
+        db.flush()
+
+    if draft.status == "active":
+        raise HTTPException(status_code=400, detail="Cannot change order while draft is active")
+
+    # Delete existing order
+    db.query(DraftOrder).filter(DraftOrder.draft_id == draft.id).delete()
+
+    # Generate new snake order
+    num_rounds = season.roster_size
+    for entry in draft_service.generate_snake_order(team_ids, num_rounds):
+        db.add(DraftOrder(draft_id=draft.id, **entry))
+
+    db.commit()
+    return {"message": "Draft order set", "team_ids": team_ids}
 
 
 @router.get("/{season_id}/board")
@@ -227,4 +334,5 @@ async def draft_websocket(websocket: WebSocket, season_id: int):
             msg = json.loads(data)
             await broadcast(season_id, msg)
     except WebSocketDisconnect:
-        _connections[season_id].remove(websocket)
+        if season_id in _connections and websocket in _connections[season_id]:
+            _connections[season_id].remove(websocket)
