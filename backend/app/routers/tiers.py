@@ -93,7 +93,16 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
             species_type1=sp.species.type1 if sp.species else None,
             species_type2=sp.species.type2 if sp.species else None,
             is_mega=sp.species.is_mega if sp.species else None,
+            is_regional_variant=sp.species.is_regional_variant if sp.species else None,
             format_legality=sp.species.format_legality if sp.species else None,
+            pokedex_number=sp.species.pokedex_number if sp.species else None,
+            hp=sp.species.hp if sp.species else None,
+            atk=sp.species.atk if sp.species else None,
+            def_=getattr(sp.species, "def_", None) if sp.species else None,
+            spatk=sp.species.spatk if sp.species else None,
+            spdef=sp.species.spdef if sp.species else None,
+            spe=sp.species.spe if sp.species else None,
+            total=sp.species.total if sp.species else None,
         )
         for sp in rows
     ]

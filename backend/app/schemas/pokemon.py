@@ -32,6 +32,15 @@ class SeasonPokemonOut(BaseModel):
     species_type1: Optional[str] = None
     species_type2: Optional[str] = None
     is_mega: Optional[bool] = None
+    is_regional_variant: Optional[bool] = None
     format_legality: Optional[dict] = None
+    pokedex_number: Optional[int] = None
+    hp: Optional[int] = None
+    atk: Optional[int] = None
+    def_: Optional[int] = None
+    spatk: Optional[int] = None
+    spdef: Optional[int] = None
+    spe: Optional[int] = None
+    total: Optional[int] = None
 
     model_config = {"from_attributes": True}
