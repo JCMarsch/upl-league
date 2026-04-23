@@ -42,5 +42,17 @@ class SeasonPokemonOut(BaseModel):
     spdef: Optional[int] = None
     spe: Optional[int] = None
     total: Optional[int] = None
+    # Aggregated game stats for the season
+    stat_games_played: Optional[int] = None
+    stat_games_won: Optional[int] = None
+    stat_games_brought: Optional[int] = None
+    stat_games_led: Optional[int] = None
+    stat_direct_kills: Optional[int] = None
+    stat_passive_kills: Optional[int] = None
+    stat_total_kills: Optional[int] = None
+    stat_direct_deaths: Optional[int] = None
+    stat_passive_deaths: Optional[int] = None
+    stat_total_deaths: Optional[int] = None
+    stat_kd_diff: Optional[int] = None
 
     model_config = {"from_attributes": True}

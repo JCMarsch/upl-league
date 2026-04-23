@@ -27,10 +27,39 @@ interface Pokemon {
   spdef: number | null
   spe: number | null
   total: number | null
+  stat_games_played: number | null
+  stat_games_won: number | null
+  stat_games_brought: number | null
+  stat_games_led: number | null
+  stat_direct_kills: number | null
+  stat_passive_kills: number | null
+  stat_total_kills: number | null
+  stat_direct_deaths: number | null
+  stat_passive_deaths: number | null
+  stat_total_deaths: number | null
+  stat_kd_diff: number | null
 }
 
 type SpriteMode = '2d' | '2d-shiny' | '3d' | '3d-shiny'
-type SortCol = 'name' | 'dex' | 'type1' | 'type2' | 'tier' | 'cost' | 'hp' | 'atk' | 'def' | 'spatk' | 'spdef' | 'spe' | 'total'
+type SortCol =
+  | 'name' | 'dex' | 'type1' | 'type2' | 'tier' | 'cost'
+  | 'hp' | 'atk' | 'def' | 'spatk' | 'spdef' | 'spe' | 'total'
+  | 'gp' | 'gw' | 'brought' | 'led' | 'dkills' | 'ikills' | 'kills'
+  | 'ddeaths' | 'ideaths' | 'deaths' | 'kd'
+
+interface StatFilters {
+  minHp: string; minAtk: string; minDef: string
+  minSpatk: string; minSpdef: string; minSpe: string; minTotal: string
+  maxHp: string; maxAtk: string; maxDef: string
+  maxSpatk: string; maxSpdef: string; maxSpe: string; maxTotal: string
+  minGp: string; minKills: string; minDeaths: string
+}
+
+const EMPTY_STAT_FILTERS: StatFilters = {
+  minHp: '', minAtk: '', minDef: '', minSpatk: '', minSpdef: '', minSpe: '', minTotal: '',
+  maxHp: '', maxAtk: '', maxDef: '', maxSpatk: '', maxSpdef: '', maxSpe: '', maxTotal: '',
+  minGp: '', minKills: '', minDeaths: '',
+}
 
 const TYPE_COLORS: Record<string, string> = {
   Fire: 'bg-red-500', Water: 'bg-blue-500', Grass: 'bg-green-500',
@@ -64,16 +93,36 @@ function getSpriteUrl(p: Pokemon, mode: SpriteMode): string | null {
 }
 
 function statBar(val: number | null) {
-  if (val === null) return null
+  if (val === null) return <span className="text-gray-300 text-xs">—</span>
   const pct = Math.min(100, Math.round((val / 255) * 100))
   const color = val >= 120 ? 'bg-green-500' : val >= 80 ? 'bg-yellow-400' : 'bg-red-400'
   return (
-    <div className="flex items-center gap-1 min-w-[56px]">
+    <div className="flex items-center gap-1" style={{ minWidth: 64 }}>
       <span className="w-7 text-right text-xs tabular-nums">{val}</span>
       <div className="flex-1 h-1.5 rounded bg-gray-200 overflow-hidden" style={{ minWidth: 28 }}>
         <div className={`h-full rounded ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
+  )
+}
+
+function num(val: number | null) {
+  return val ?? 0
+}
+
+function StatFilterInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="flex items-center gap-1 text-xs">
+      <span className="text-gray-500 w-16 text-right shrink-0">{label}</span>
+      <input
+        type="number"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="border rounded px-1.5 py-0.5 w-16 text-xs"
+        style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+        placeholder="—"
+      />
+    </label>
   )
 }
 
@@ -91,6 +140,8 @@ export default function PokemonDatabasePage() {
   )
   const [sortCol, setSortCol] = useState<SortCol>('dex')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [showStatFilters, setShowStatFilters] = useState(false)
+  const [sf, setSf] = useState<StatFilters>(EMPTY_STAT_FILTERS)
 
   useEffect(() => {
     if (seasonLoading) return
@@ -112,11 +163,23 @@ export default function PokemonDatabasePage() {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     } else {
       setSortCol(col)
-      setSortDir(col === 'name' ? 'asc' : 'desc')
+      setSortDir(col === 'name' || col === 'type1' || col === 'type2' || col === 'dex' ? 'asc' : 'desc')
     }
   }
 
+  const setF = (key: keyof StatFilters) => (val: string) => setSf(prev => ({ ...prev, [key]: val }))
+
+  const activeFilterCount = Object.values(sf).filter(v => v !== '').length
+
   const filtered = useMemo(() => {
+    const n = (s: string) => s === '' ? null : Number(s)
+    const passes = (val: number | null, min: string, max: string) => {
+      const v = val ?? 0
+      if (n(min) !== null && v < n(min)!) return false
+      if (n(max) !== null && v > n(max)!) return false
+      return true
+    }
+
     let list = pokemon.filter((p) => {
       if (legalOnly && !p.is_legal) return false
       if (search && !p.species_name?.toLowerCase().includes(search.toLowerCase())) return false
@@ -124,26 +187,47 @@ export default function PokemonDatabasePage() {
       if (typeFilter && p.species_type1 !== typeFilter && p.species_type2 !== typeFilter) return false
       if (availabilityFilter === 'available' && p.drafted_by_team_id) return false
       if (availabilityFilter === 'drafted' && !p.drafted_by_team_id) return false
+      if (!passes(p.hp, sf.minHp, sf.maxHp)) return false
+      if (!passes(p.atk, sf.minAtk, sf.maxAtk)) return false
+      if (!passes(p.def_, sf.minDef, sf.maxDef)) return false
+      if (!passes(p.spatk, sf.minSpatk, sf.maxSpatk)) return false
+      if (!passes(p.spdef, sf.minSpdef, sf.maxSpdef)) return false
+      if (!passes(p.spe, sf.minSpe, sf.maxSpe)) return false
+      if (!passes(p.total, sf.minTotal, sf.maxTotal)) return false
+      if (sf.minGp !== '' && num(p.stat_games_played) < Number(sf.minGp)) return false
+      if (sf.minKills !== '' && num(p.stat_total_kills) < Number(sf.minKills)) return false
+      if (sf.minDeaths !== '' && num(p.stat_total_deaths) < Number(sf.minDeaths)) return false
       return true
     })
 
     list = [...list].sort((a, b) => {
       let av: number | string, bv: number | string
       switch (sortCol) {
-        case 'name':  av = a.species_name ?? ''; bv = b.species_name ?? ''; break
-        case 'dex':   av = a.pokedex_number ?? 9999; bv = b.pokedex_number ?? 9999; break
-        case 'type1': av = a.species_type1 ?? ''; bv = b.species_type1 ?? ''; break
-        case 'type2': av = a.species_type2 ?? ''; bv = b.species_type2 ?? ''; break
-        case 'tier':  av = a.tier ?? 'ZZZ'; bv = b.tier ?? 'ZZZ'; break
-        case 'cost':  av = a.point_cost ?? -1; bv = b.point_cost ?? -1; break
-        case 'hp':    av = a.hp ?? -1; bv = b.hp ?? -1; break
-        case 'atk':   av = a.atk ?? -1; bv = b.atk ?? -1; break
-        case 'def':   av = a.def_ ?? -1; bv = b.def_ ?? -1; break
-        case 'spatk': av = a.spatk ?? -1; bv = b.spatk ?? -1; break
-        case 'spdef': av = a.spdef ?? -1; bv = b.spdef ?? -1; break
-        case 'spe':   av = a.spe ?? -1; bv = b.spe ?? -1; break
-        case 'total': av = a.total ?? -1; bv = b.total ?? -1; break
-        default:      av = a.species_name ?? ''; bv = b.species_name ?? ''
+        case 'name':    av = a.species_name ?? ''; bv = b.species_name ?? ''; break
+        case 'dex':     av = a.pokedex_number ?? 9999; bv = b.pokedex_number ?? 9999; break
+        case 'type1':   av = a.species_type1 ?? ''; bv = b.species_type1 ?? ''; break
+        case 'type2':   av = a.species_type2 ?? ''; bv = b.species_type2 ?? ''; break
+        case 'tier':    av = a.tier ?? 'ZZZ'; bv = b.tier ?? 'ZZZ'; break
+        case 'cost':    av = a.point_cost ?? -1; bv = b.point_cost ?? -1; break
+        case 'hp':      av = a.hp ?? -1; bv = b.hp ?? -1; break
+        case 'atk':     av = a.atk ?? -1; bv = b.atk ?? -1; break
+        case 'def':     av = a.def_ ?? -1; bv = b.def_ ?? -1; break
+        case 'spatk':   av = a.spatk ?? -1; bv = b.spatk ?? -1; break
+        case 'spdef':   av = a.spdef ?? -1; bv = b.spdef ?? -1; break
+        case 'spe':     av = a.spe ?? -1; bv = b.spe ?? -1; break
+        case 'total':   av = a.total ?? -1; bv = b.total ?? -1; break
+        case 'gp':      av = num(a.stat_games_played); bv = num(b.stat_games_played); break
+        case 'gw':      av = num(a.stat_games_won); bv = num(b.stat_games_won); break
+        case 'brought': av = num(a.stat_games_brought); bv = num(b.stat_games_brought); break
+        case 'led':     av = num(a.stat_games_led); bv = num(b.stat_games_led); break
+        case 'dkills':  av = num(a.stat_direct_kills); bv = num(b.stat_direct_kills); break
+        case 'ikills':  av = num(a.stat_passive_kills); bv = num(b.stat_passive_kills); break
+        case 'kills':   av = num(a.stat_total_kills); bv = num(b.stat_total_kills); break
+        case 'ddeaths': av = num(a.stat_direct_deaths); bv = num(b.stat_direct_deaths); break
+        case 'ideaths': av = num(a.stat_passive_deaths); bv = num(b.stat_passive_deaths); break
+        case 'deaths':  av = num(a.stat_total_deaths); bv = num(b.stat_total_deaths); break
+        case 'kd':      av = num(a.stat_kd_diff); bv = num(b.stat_kd_diff); break
+        default:        av = a.species_name ?? ''; bv = b.species_name ?? ''
       }
       if (av < bv) return sortDir === 'asc' ? -1 : 1
       if (av > bv) return sortDir === 'asc' ? 1 : -1
@@ -151,25 +235,16 @@ export default function PokemonDatabasePage() {
     })
 
     return list
-  }, [pokemon, search, tierFilter, typeFilter, availabilityFilter, legalOnly, sortCol, sortDir])
+  }, [pokemon, search, tierFilter, typeFilter, availabilityFilter, legalOnly, sortCol, sortDir, sf])
 
   const tiers = [...new Set(pokemon.map((p) => p.tier).filter(Boolean))].sort() as string[]
   const types = [...new Set(pokemon.flatMap((p) => [p.species_type1, p.species_type2].filter(Boolean)))].sort() as string[]
 
-  const SortHeader = ({ col, label, title }: { col: SortCol; label: string; title?: string }) => (
+  const SortTh = ({ col, label, title, right = true }: { col: SortCol; label: string; title?: string; right?: boolean }) => (
     <th
-      className="px-2 py-2 cursor-pointer select-none hover:bg-gray-200 whitespace-nowrap text-right"
+      className={`px-2 py-2 cursor-pointer select-none hover:bg-gray-200 whitespace-nowrap text-xs ${right ? 'text-right' : 'text-left'}`}
       onClick={() => handleSort(col)}
       title={title}
-    >
-      {label}{sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-    </th>
-  )
-
-  const SortHeaderLeft = ({ col, label }: { col: SortCol; label: string }) => (
-    <th
-      className="px-2 py-2 cursor-pointer select-none hover:bg-gray-200 whitespace-nowrap text-left"
-      onClick={() => handleSort(col)}
     >
       {label}{sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
     </th>
@@ -179,8 +254,8 @@ export default function PokemonDatabasePage() {
     <div className="max-w-full mx-auto p-6">
       <h1 className="text-3xl font-bold mb-6">Pokemon Database</h1>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
+      {/* Main filters */}
+      <div className="flex flex-wrap gap-3 mb-3 items-center">
         <input
           type="text"
           placeholder="Search Pokemon..."
@@ -216,8 +291,64 @@ export default function PokemonDatabasePage() {
         >
           {legalOnly ? 'Legal Only' : 'All Pokemon'}
         </button>
+        <button
+          onClick={() => setShowStatFilters(v => !v)}
+          className="px-3 py-2 rounded-md text-sm font-medium border"
+          style={{
+            borderColor: activeFilterCount > 0 ? '#6366f1' : 'var(--color-border)',
+            color: activeFilterCount > 0 ? '#4f46e5' : 'var(--color-text-muted)',
+            background: activeFilterCount > 0 ? '#eef2ff' : 'var(--color-surface)',
+          }}
+        >
+          Stat Filters {activeFilterCount > 0 ? `(${activeFilterCount})` : ''} {showStatFilters ? '▲' : '▼'}
+        </button>
+        {activeFilterCount > 0 && (
+          <button onClick={() => setSf(EMPTY_STAT_FILTERS)} className="px-3 py-2 rounded-md text-sm border text-gray-500 hover:bg-gray-100">
+            Clear filters
+          </button>
+        )}
         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{filtered.length} shown</span>
       </div>
+
+      {/* Stat filters panel */}
+      {showStatFilters && (
+        <div className="mb-4 p-4 rounded-lg border text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Base Stats</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              {([
+                ['HP', 'minHp', 'maxHp'], ['Atk', 'minAtk', 'maxAtk'],
+                ['Def', 'minDef', 'maxDef'], ['SpA', 'minSpatk', 'maxSpatk'],
+                ['SpD', 'minSpdef', 'maxSpdef'], ['Spe', 'minSpe', 'maxSpe'],
+                ['BST', 'minTotal', 'maxTotal'],
+              ] as [string, keyof StatFilters, keyof StatFilters][]).map(([label, minK, maxK]) => (
+                <div key={label} className="flex items-center gap-1">
+                  <span className="text-xs font-medium w-7">{label}</span>
+                  <StatFilterInput label="min" value={sf[minK]} onChange={setF(minK)} />
+                  <StatFilterInput label="max" value={sf[maxK]} onChange={setF(maxK)} />
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Game Stats (min)</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium w-16">Games Played</span>
+                <StatFilterInput label="min" value={sf.minGp} onChange={setF('minGp')} />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium w-16">Total Kills</span>
+                <StatFilterInput label="min" value={sf.minKills} onChange={setF('minKills')} />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium w-16">Total Deaths</span>
+                <StatFilterInput label="min" value={sf.minDeaths} onChange={setF('minDeaths')} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sprite mode toggle */}
       <div className="flex gap-1 mb-4">
@@ -245,60 +376,84 @@ export default function PokemonDatabasePage() {
         <div className="text-center text-gray-500 py-12">Loading...</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse" style={{ minWidth: 900 }}>
+          <table className="w-full text-sm border-collapse" style={{ minWidth: 1200 }}>
             <thead>
-              <tr className="bg-gray-100 text-left text-xs">
-                <th className="px-2 py-2 w-10">Sprite</th>
-                <SortHeader col="dex" label="#" title="Pokédex number" />
-                <SortHeaderLeft col="name" label="Name" />
-                <SortHeaderLeft col="type1" label="Type 1" />
-                <SortHeaderLeft col="type2" label="Type 2" />
-                <SortHeader col="tier" label="Tier" />
-                <SortHeader col="cost" label="Cost" />
-                <SortHeader col="hp" label="HP" />
-                <SortHeader col="atk" label="Atk" />
-                <SortHeader col="def" label="Def" />
-                <SortHeader col="spatk" label="SpA" title="Special Attack" />
-                <SortHeader col="spdef" label="SpD" title="Special Defense" />
-                <SortHeader col="spe" label="Spe" />
-                <SortHeader col="total" label="BST" title="Base Stat Total" />
-                <th className="px-2 py-2 text-left">Status</th>
+              <tr style={{ background: 'var(--color-surface)' }}>
+                <th className="px-2 py-2 text-xs w-10 text-left">Sprite</th>
+                <SortTh col="dex" label="#" title="Pokédex number" />
+                <SortTh col="name" label="Name" right={false} />
+                <SortTh col="type1" label="Type 1" right={false} />
+                <SortTh col="type2" label="Type 2" right={false} />
+                <SortTh col="tier" label="Tier" />
+                <SortTh col="cost" label="Cost" />
+                <SortTh col="hp" label="HP" />
+                <SortTh col="atk" label="Atk" />
+                <SortTh col="def" label="Def" />
+                <SortTh col="spatk" label="SpA" title="Special Attack" />
+                <SortTh col="spdef" label="SpD" title="Special Defense" />
+                <SortTh col="spe" label="Spe" />
+                <SortTh col="total" label="BST" title="Base Stat Total" />
+                <SortTh col="gp" label="GP" title="Games Played" />
+                <SortTh col="gw" label="GW" title="Games Won" />
+                <SortTh col="brought" label="Brought" title="Times brought to game" />
+                <SortTh col="led" label="Led" title="Times used as lead" />
+                <SortTh col="dkills" label="DK" title="Direct Kills" />
+                <SortTh col="ikills" label="IK" title="Indirect/Passive Kills" />
+                <SortTh col="kills" label="Kills" title="Total Kills" />
+                <SortTh col="ddeaths" label="DD" title="Direct Deaths" />
+                <SortTh col="ideaths" label="ID" title="Indirect/Passive Deaths" />
+                <SortTh col="deaths" label="Deaths" title="Total Deaths" />
+                <SortTh col="kd" label="K/D" title="Kill/Death Differential" />
+                <th className="px-2 py-2 text-xs text-left">Status</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((p) => {
                 const spriteUrl = getSpriteUrl(p, spriteMode)
                 const isDrafted = !!p.drafted_by_team_id
+                const hasGameStats = p.stat_games_played != null
                 return (
-                  <tr key={p.id} className="border-t hover:bg-gray-50" style={{ opacity: isDrafted ? 0.6 : 1 }}>
+                  <tr key={p.id} className="border-t hover:bg-gray-50" style={{ opacity: isDrafted ? 0.65 : 1 }}>
                     <td className="px-2 py-1">
-                      {spriteUrl ? (
-                        <img src={spriteUrl} alt={p.species_name} className="w-9 h-9" style={{ objectFit: 'contain' }} />
-                      ) : (
-                        <div className="w-9 h-9 bg-gray-200 rounded" />
-                      )}
+                      {spriteUrl
+                        ? <img src={spriteUrl} alt={p.species_name} className="w-9 h-9" style={{ objectFit: 'contain' }} />
+                        : <div className="w-9 h-9 bg-gray-200 rounded" />}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums text-gray-400 text-xs">
                       {p.pokedex_number != null ? `#${String(p.pokedex_number).padStart(3, '0')}` : '—'}
                     </td>
                     <td className="px-2 py-1 font-medium whitespace-nowrap">{p.species_name}</td>
-                    <td className="px-2 py-1">
-                      {p.species_type1 && <TypeBadge type={p.species_type1} />}
-                    </td>
-                    <td className="px-2 py-1">
-                      {p.species_type2 && <TypeBadge type={p.species_type2} />}
-                    </td>
-                    <td className="px-2 py-1 text-right">{p.tier || '—'}</td>
-                    <td className="px-2 py-1 text-right">{p.point_cost ?? '—'}</td>
+                    <td className="px-2 py-1">{p.species_type1 && <TypeBadge type={p.species_type1} />}</td>
+                    <td className="px-2 py-1">{p.species_type2 && <TypeBadge type={p.species_type2} />}</td>
+                    <td className="px-2 py-1 text-right text-xs">{p.tier || '—'}</td>
+                    <td className="px-2 py-1 text-right text-xs">{p.point_cost ?? '—'}</td>
                     <td className="px-2 py-1">{statBar(p.hp)}</td>
                     <td className="px-2 py-1">{statBar(p.atk)}</td>
                     <td className="px-2 py-1">{statBar(p.def_)}</td>
                     <td className="px-2 py-1">{statBar(p.spatk)}</td>
                     <td className="px-2 py-1">{statBar(p.spdef)}</td>
                     <td className="px-2 py-1">{statBar(p.spe)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums font-semibold text-xs">
-                      {p.total ?? '—'}
-                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums font-semibold text-xs">{p.total ?? '—'}</td>
+                    {hasGameStats ? <>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_games_played)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_games_won)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_games_brought)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_games_led)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_direct_kills)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_passive_kills)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs font-semibold">{num(p.stat_total_kills)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_direct_deaths)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs">{num(p.stat_passive_deaths)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs font-semibold">{num(p.stat_total_deaths)}</td>
+                      <td className="px-2 py-1 text-right tabular-nums text-xs font-semibold"
+                        style={{ color: num(p.stat_kd_diff) > 0 ? '#16a34a' : num(p.stat_kd_diff) < 0 ? '#dc2626' : undefined }}>
+                        {num(p.stat_kd_diff) > 0 ? `+${num(p.stat_kd_diff)}` : num(p.stat_kd_diff)}
+                      </td>
+                    </> : <>
+                      {Array.from({ length: 11 }).map((_, i) => (
+                        <td key={i} className="px-2 py-1 text-center text-gray-200 text-xs">—</td>
+                      ))}
+                    </>}
                     <td className="px-2 py-1">
                       {isDrafted
                         ? <span className="text-gray-400 text-xs">Drafted</span>

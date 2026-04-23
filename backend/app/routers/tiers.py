@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from datetime import datetime, timezone
 from app.database import get_db
 from app.auth import require_admin
 from app.models.season import Season
 from app.models.pokemon import SeasonPokemon, PokemonSpecies
+from app.models.stats import PokemonSeasonStats
 from app.models.config import LeagueConfig
 from app.models.user import User
 from app.schemas.pokemon import BulkPokemonUpdate, SeasonPokemonOut
@@ -75,6 +77,29 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
         .order_by(SeasonPokemon.species_id)
         .all()
     )
+
+    # Aggregate game stats per species for this season (sum across teams in case of trades)
+    game_stats_rows = (
+        db.query(
+            PokemonSeasonStats.species_id,
+            func.sum(PokemonSeasonStats.games_played).label("games_played"),
+            func.sum(PokemonSeasonStats.games_won).label("games_won"),
+            func.sum(PokemonSeasonStats.games_brought).label("games_brought"),
+            func.sum(PokemonSeasonStats.games_led).label("games_led"),
+            func.sum(PokemonSeasonStats.direct_kills).label("direct_kills"),
+            func.sum(PokemonSeasonStats.passive_kills).label("passive_kills"),
+            func.sum(PokemonSeasonStats.total_kills).label("total_kills"),
+            func.sum(PokemonSeasonStats.direct_deaths).label("direct_deaths"),
+            func.sum(PokemonSeasonStats.passive_deaths).label("passive_deaths"),
+            func.sum(PokemonSeasonStats.total_deaths).label("total_deaths"),
+            func.sum(PokemonSeasonStats.kill_death_differential).label("kd_diff"),
+        )
+        .filter(PokemonSeasonStats.season_id == season_id)
+        .group_by(PokemonSeasonStats.species_id)
+        .all()
+    )
+    gs_map = {r.species_id: r for r in game_stats_rows}
+
     return [
         SeasonPokemonOut(
             id=sp.id,
@@ -103,6 +128,19 @@ def list_season_pokemon(season_id: int, db: Session = Depends(get_db)):
             spdef=sp.species.spdef if sp.species else None,
             spe=sp.species.spe if sp.species else None,
             total=sp.species.total if sp.species else None,
+            **({
+                "stat_games_played": gs.games_played,
+                "stat_games_won": gs.games_won,
+                "stat_games_brought": gs.games_brought,
+                "stat_games_led": gs.games_led,
+                "stat_direct_kills": gs.direct_kills,
+                "stat_passive_kills": gs.passive_kills,
+                "stat_total_kills": gs.total_kills,
+                "stat_direct_deaths": gs.direct_deaths,
+                "stat_passive_deaths": gs.passive_deaths,
+                "stat_total_deaths": gs.total_deaths,
+                "stat_kd_diff": gs.kd_diff,
+            } if (gs := gs_map.get(sp.species_id)) else {})
         )
         for sp in rows
     ]
