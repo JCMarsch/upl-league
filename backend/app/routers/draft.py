@@ -9,7 +9,7 @@ from app.database import get_db
 from app.auth import require_admin, get_current_user
 from app.models.season import Season
 from app.models.team import Team
-from app.models.draft import Draft, DraftOrder
+from app.models.draft import Draft, DraftOrder, DraftPick
 from app.models.pokemon import SeasonPokemon, RosterPokemon
 from app.models.user import User
 from app.schemas.draft import DraftPickCreate, DraftPickOut, DraftStateOut
@@ -185,6 +185,54 @@ def make_pick(
 
     _schedule_pick_timer(draft, season)
     return pick
+
+
+@router.post("/{season_id}/reset")
+def reset_draft(
+    season_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Reset draft: undo all picks, restore team points, set status back to pending."""
+    from app import scheduler as draft_scheduler
+    draft_scheduler.cancel_autopick(season_id)
+
+    draft = db.query(Draft).filter(Draft.season_id == season_id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+
+    season = db.query(Season).filter(Season.id == season_id).first()
+
+    # Restore team points
+    teams = db.query(Team).filter(Team.season_id == season_id).all()
+    for team in teams:
+        team.points_remaining = season.points_budget
+
+    # Un-draft all pokemon
+    db.query(SeasonPokemon).filter(SeasonPokemon.season_id == season_id).update(
+        {"drafted_by_team_id": None, "draft_pick_number": None, "acquired_via": None},
+        synchronize_session=False,
+    )
+
+    # Remove roster entries for drafted pokemon
+    drafted_sp_ids = [
+        row.id for row in db.query(SeasonPokemon.id).filter(SeasonPokemon.season_id == season_id).all()
+    ]
+    db.query(RosterPokemon).filter(
+        RosterPokemon.season_pokemon_id.in_(drafted_sp_ids)
+    ).delete(synchronize_session=False)
+
+    # Delete all picks
+    db.query(DraftPick).filter(DraftPick.draft_id == draft.id).delete(synchronize_session=False)
+
+    # Reset draft state
+    draft.status = "pending"
+    draft.current_pick_number = 1
+    draft.current_team_id = None
+    draft.pick_started_at = None
+
+    db.commit()
+    return {"status": "reset"}
 
 
 @router.post("/{season_id}/pause")

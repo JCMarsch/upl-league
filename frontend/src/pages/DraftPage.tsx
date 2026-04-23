@@ -167,6 +167,16 @@ export default function DraftPage() {
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
   }
 
+  const resetDraft = async () => {
+    if (!seasonId) return
+    if (!window.confirm('Reset the entire draft? This will undo ALL picks and restore all team budgets. This cannot be undone.')) return
+    try {
+      await axios.post(`/draft/${seasonId}/reset`, {}, { withCredentials: true })
+      setPendingPick(null)
+      await fetchState()
+    } catch (e: any) { setMsg(e.response?.data?.detail || 'Reset failed') }
+  }
+
   const available = pokemon.filter(p => p.is_legal && !p.drafted_by_team_id)
   const filtered = available.filter(p => {
     if (tierFilter && p.tier !== tierFilter) return false
@@ -247,6 +257,11 @@ export default function DraftPage() {
           {isAdmin && draftState.status !== 'complete' && (
             <button onClick={pauseResume} className="px-3 py-1.5 text-sm border rounded" style={{ borderColor: 'var(--color-border)' }}>
               {draftState.status === 'active' ? 'Pause' : 'Resume'}
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={resetDraft} className="px-3 py-1.5 text-sm border rounded" style={{ borderColor: '#ef4444', color: '#ef4444' }}>
+              Reset
             </button>
           )}
         </div>
