@@ -44,13 +44,21 @@ export default function UsersTab() {
     setErr('')
   }
 
+  const toErrString = (e: any): string => {
+    const detail = e.response?.data?.detail
+    if (!detail) return 'Failed'
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail)) return detail.map((d: any) => d.msg ?? JSON.stringify(d)).join(', ')
+    return JSON.stringify(detail)
+  }
+
   const saveRoles = async (id: number) => {
     setSaving(true); setErr('')
     try {
       await axios.patch(`/admin/users/${id}`, { roles: editRoles }, { withCredentials: true })
       setEditingId(null)
       load()
-    } catch (e: any) { setErr(e.response?.data?.detail ?? 'Failed') }
+    } catch (e: any) { setErr(toErrString(e)) }
     finally { setSaving(false) }
   }
 
@@ -58,11 +66,12 @@ export default function UsersTab() {
     if (!form.username || !form.password) { setErr('Username and password required'); return }
     setSaving(true); setErr('')
     try {
-      await axios.post('/auth/register', form, { withCredentials: true })
+      const payload = { ...form, email: form.email || undefined }
+      await axios.post('/auth/register', payload, { withCredentials: true })
       setCreating(false)
       setForm({ username: '', password: '', email: '', roles: 'viewer' })
       load()
-    } catch (e: any) { setErr(e.response?.data?.detail ?? 'Failed') }
+    } catch (e: any) { setErr(toErrString(e)) }
     finally { setSaving(false) }
   }
 
