@@ -56,6 +56,75 @@ def get_highest_tier_available(db: Session, season_id: int) -> Optional[SeasonPo
     ).first()
 
 
+def _check_wishlist_conditions(
+    db: Session,
+    team_id: int,
+    season_id: int,
+    item,  # WishlistItem
+) -> bool:
+    """Return True if the wishlist item's conditions are met."""
+    from app.models.pokemon import RosterPokemon as RP
+    conditions = item.conditions or []
+    if not conditions:
+        return True
+
+    results = []
+    for cond in conditions:
+        ctype = cond.get("type")
+        sid = cond.get("species_id")
+        if ctype == "already_have":
+            has = db.query(RP).join(SeasonPokemon, SeasonPokemon.id == RP.season_pokemon_id).filter(
+                RP.team_id == team_id,
+                SeasonPokemon.season_id == season_id,
+                SeasonPokemon.species_id == sid,
+            ).first() is not None
+            results.append(has)
+        elif ctype == "pokemon_gone":
+            gone = db.query(SeasonPokemon).filter(
+                SeasonPokemon.season_id == season_id,
+                SeasonPokemon.species_id == sid,
+                SeasonPokemon.drafted_by_team_id.isnot(None),
+            ).first() is not None
+            results.append(gone)
+
+    if not results:
+        return True
+    op = item.conditions_operator or "AND"
+    return all(results) if op == "AND" else any(results)
+
+
+def _get_wishlist_autopick(
+    db: Session,
+    season_id: int,
+    team: Team,
+    season: Season,
+) -> Optional[SeasonPokemon]:
+    """Check wishlist in priority order. Return the first matching available pokemon."""
+    from app.models.wishlist import WishlistItem
+    items = (
+        db.query(WishlistItem)
+        .filter(WishlistItem.team_id == team.id)
+        .order_by(WishlistItem.priority)
+        .all()
+    )
+    for item in items:
+        sp = db.query(SeasonPokemon).filter(
+            SeasonPokemon.id == item.season_pokemon_id,
+            SeasonPokemon.season_id == season_id,
+            SeasonPokemon.is_legal == True,
+            SeasonPokemon.drafted_by_team_id == None,
+        ).first()
+        if not sp:
+            continue
+        cost = sp.point_cost or 0
+        if cost > team.points_remaining:
+            continue
+        if not _check_wishlist_conditions(db, team.id, season_id, item):
+            continue
+        return sp
+    return None
+
+
 def get_best_autopick(
     db: Session,
     season_id: int,
@@ -69,6 +138,11 @@ def get_best_autopick(
 
     Does NOT prioritize required slots first — picks highest value that keeps options open.
     """
+    # Wishlist takes priority
+    wishlist_pick = _get_wishlist_autopick(db, season_id, team, season)
+    if wishlist_pick:
+        return wishlist_pick
+
     available = (
         db.query(SeasonPokemon)
         .filter(

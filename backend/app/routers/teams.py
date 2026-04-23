@@ -3,11 +3,24 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.auth import get_current_user
 from app.models.team import Team
-from app.models.pokemon import RosterPokemon
+from app.models.pokemon import RosterPokemon, SeasonPokemon
 from app.models.stats import PokemonSeasonStats, TeamSeasonStats
+from app.models.wishlist import WishlistItem
 from app.models.user import User
 from app.schemas.team import TeamDetailOut, RosterPokemonOut, RosterPokemonUpdate
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel
+
+
+class WishlistItemIn(BaseModel):
+    season_pokemon_id: int
+    priority: int = 0
+    conditions_operator: Optional[str] = None
+    conditions: Optional[list] = None
+
+
+class WishlistReorderIn(BaseModel):
+    ordered_ids: List[int]  # wishlist item ids in new priority order
 
 router = APIRouter(prefix="/teams", tags=["teams"])
 
@@ -197,3 +210,152 @@ def update_roster_pokemon(
         games_brought=gs.games_brought if gs else 0,
         games_led=gs.games_led if gs else 0,
     )
+
+
+def _require_team_access(team_id: int, db: Session, current_user: User) -> Team:
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    is_admin = any(r in current_user.roles.split(",") for r in ["admin", "superadmin"])
+    if not is_admin and team.manager_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    return team
+
+
+def _wishlist_out(items: List[WishlistItem]) -> list:
+    return [
+        {
+            "id": w.id,
+            "season_pokemon_id": w.season_pokemon_id,
+            "priority": w.priority,
+            "conditions_operator": w.conditions_operator,
+            "conditions": w.conditions or [],
+            "species_name": w.season_pokemon.species.name if w.season_pokemon and w.season_pokemon.species else None,
+            "species_sprite_url": w.season_pokemon.species.sprite_url if w.season_pokemon and w.season_pokemon.species else None,
+            "tier": w.season_pokemon.tier if w.season_pokemon else None,
+            "point_cost": w.season_pokemon.point_cost if w.season_pokemon else None,
+            "is_available": w.season_pokemon.drafted_by_team_id is None if w.season_pokemon else False,
+        }
+        for w in items
+    ]
+
+
+@router.get("/{team_id}/wishlist")
+def get_wishlist(
+    team_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_access(team_id, db, current_user)
+    items = (
+        db.query(WishlistItem)
+        .options(
+            joinedload(WishlistItem.season_pokemon)
+            .joinedload(SeasonPokemon.species)
+        )
+        .filter(WishlistItem.team_id == team_id)
+        .order_by(WishlistItem.priority)
+        .all()
+    )
+    return _wishlist_out(items)
+
+
+@router.post("/{team_id}/wishlist")
+def add_wishlist_item(
+    team_id: int,
+    data: WishlistItemIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_access(team_id, db, current_user)
+
+    # Prevent duplicates
+    existing = db.query(WishlistItem).filter(
+        WishlistItem.team_id == team_id,
+        WishlistItem.season_pokemon_id == data.season_pokemon_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Already on wishlist")
+
+    max_priority = db.query(WishlistItem).filter(WishlistItem.team_id == team_id).count()
+    item = WishlistItem(
+        team_id=team_id,
+        season_pokemon_id=data.season_pokemon_id,
+        priority=max_priority,
+        conditions_operator=data.conditions_operator,
+        conditions=data.conditions,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+
+    # Reload with joined data
+    item = (
+        db.query(WishlistItem)
+        .options(joinedload(WishlistItem.season_pokemon).joinedload(SeasonPokemon.species))
+        .filter(WishlistItem.id == item.id)
+        .first()
+    )
+    return _wishlist_out([item])[0]
+
+
+@router.delete("/{team_id}/wishlist/{item_id}")
+def remove_wishlist_item(
+    team_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_access(team_id, db, current_user)
+    item = db.query(WishlistItem).filter(WishlistItem.id == item_id, WishlistItem.team_id == team_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    db.delete(item)
+    db.commit()
+    # Renumber priorities
+    remaining = db.query(WishlistItem).filter(WishlistItem.team_id == team_id).order_by(WishlistItem.priority).all()
+    for i, w in enumerate(remaining):
+        w.priority = i
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/{team_id}/wishlist/reorder")
+def reorder_wishlist(
+    team_id: int,
+    data: WishlistReorderIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_access(team_id, db, current_user)
+    for priority, item_id in enumerate(data.ordered_ids):
+        db.query(WishlistItem).filter(
+            WishlistItem.id == item_id,
+            WishlistItem.team_id == team_id,
+        ).update({"priority": priority})
+    db.commit()
+    return {"ok": True}
+
+
+@router.patch("/{team_id}/wishlist/{item_id}")
+def update_wishlist_item(
+    team_id: int,
+    item_id: int,
+    data: WishlistItemIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_team_access(team_id, db, current_user)
+    item = db.query(WishlistItem).filter(WishlistItem.id == item_id, WishlistItem.team_id == team_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    item.conditions_operator = data.conditions_operator
+    item.conditions = data.conditions
+    db.commit()
+    item = (
+        db.query(WishlistItem)
+        .options(joinedload(WishlistItem.season_pokemon).joinedload(SeasonPokemon.species))
+        .filter(WishlistItem.id == item.id)
+        .first()
+    )
+    return _wishlist_out([item])[0]
