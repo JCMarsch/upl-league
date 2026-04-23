@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.routers import health, auth, seasons, tiers, draft, teams, matches, standings, transactions, history, notifications, admin
+from app.routers import health, auth, seasons, tiers, draft, teams, matches, standings, transactions, history, notifications, admin, analytics
 
 
 def configure_logging():
@@ -128,6 +128,7 @@ app.include_router(transactions.router)
 app.include_router(history.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
+app.include_router(analytics.router)
 
 # Serve frontend static files in production
 FRONTEND_DIST = Path(__file__).parent.parent.parent / "frontend" / "dist"
