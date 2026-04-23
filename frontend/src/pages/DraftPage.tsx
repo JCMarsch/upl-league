@@ -2,7 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useActiveSeason } from '../hooks/useActiveSeason'
-import { TIERS } from '../constants/tiers'
+import { TIERS, TIER_COLORS } from '../constants/tiers'
+
+const MEGA_BANNER_COLORS: Record<string, string> = {
+  S: '#4c1d95', A: '#6d28d9', B: '#7c3aed', C: '#8b5cf6', D: '#a78bfa', Free: '#c4b5fd',
+}
 
 interface DraftState {
   id: number
@@ -486,14 +490,17 @@ export default function DraftPage() {
               <div className="flex flex-wrap gap-1">
                 {teamPokemon(team.id).map(p => {
                   const pickNum = picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number
-                  const tierColors: Record<string, string> = { S: '#f59e0b', A: '#8b5cf6', B: '#3b82f6', C: '#22c55e', D: '#ef4444', Mega: '#ec4899', Free: '#9ca3af' }
-                  const tColor = tierColors[p.tier ?? ''] ?? '#9ca3af'
+                  const isMega = Boolean(p.is_mega)
+                  const tierLabel = isMega ? `M-${p.tier ?? '?'}` : (p.tier ?? '?')
+                  const tColor = isMega
+                    ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed')
+                    : (TIER_COLORS[p.tier ?? '']?.label ?? '#9ca3af')
                   return (
                     <div
                       key={p.id}
                       className="relative"
                       style={{ width: 40, height: 44 }}
-                      title={`#${pickNum ?? '?'} ${p.species_name} · ${p.tier ?? 'N/A'} · ${p.point_cost ?? '?'}pts`}
+                      title={`#${pickNum ?? '?'} ${p.species_name} · ${isMega ? 'Mega-' : ''}${p.tier ?? 'N/A'} · ${p.point_cost ?? '?'}pts`}
                     >
                       <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-10 h-8 object-contain" />
                       {pickNum !== undefined && (
@@ -504,7 +511,7 @@ export default function DraftPage() {
                       )}
                       <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
                         style={{ background: tColor, color: '#fff', lineHeight: '10px' }}>
-                        {p.tier ?? '?'}
+                        {tierLabel}
                       </div>
                     </div>
                   )

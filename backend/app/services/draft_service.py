@@ -105,6 +105,11 @@ def _get_wishlist_autopick(
 ) -> Optional[SeasonPokemon]:
     """Check wishlist in priority order. Return the first matching available pokemon."""
     from app.models.wishlist import WishlistItem
+    required_slots = season.required_slots or {}
+    max_megas = required_slots.get('mega', 0)
+    fulfilled = _count_fulfilled_slots(db, team.id, season_id) if max_megas > 0 else {}
+    current_megas = fulfilled.get('mega', 0)
+
     items = (
         db.query(WishlistItem)
         .filter(WishlistItem.team_id == team.id)
@@ -117,11 +122,13 @@ def _get_wishlist_autopick(
             SeasonPokemon.season_id == season_id,
             SeasonPokemon.is_legal == True,
             SeasonPokemon.drafted_by_team_id == None,
-        ).first()
+        ).options(joinedload(SeasonPokemon.species)).first()
         if not sp:
             continue
         cost = sp.point_cost or 0
         if cost > team.points_remaining:
+            continue
+        if max_megas > 0 and _is_mega(sp) and current_megas >= max_megas:
             continue
         if not _check_wishlist_conditions(db, team.id, season_id, item):
             continue
@@ -177,6 +184,8 @@ def get_best_autopick(
         slot: max(0, count - fulfilled.get(slot, 0))
         for slot, count in required_slots.items()
     }
+    max_megas = required_slots.get('mega', 0)
+    current_megas = fulfilled.get('mega', 0)
 
     # Sort available by cost ascending for safe_budget calculation
     available_sorted_by_cost = sorted(available, key=lambda p: p.point_cost or 0)
@@ -193,6 +202,8 @@ def get_best_autopick(
     for candidate in candidates:
         cost = candidate.point_cost or 0
         if cost > team.points_remaining:
+            continue
+        if max_megas > 0 and _is_mega(candidate) and current_megas >= max_megas:
             continue
 
         remaining_after_pick = team.points_remaining - cost
@@ -218,6 +229,8 @@ def get_best_autopick(
     # Fallback: cheapest available that fits budget
     for p in available_sorted_by_cost:
         if (p.point_cost or 0) <= team.points_remaining:
+            if max_megas > 0 and _is_mega(p) and current_megas >= max_megas:
+                continue
             return p
 
     return None

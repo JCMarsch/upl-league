@@ -98,7 +98,7 @@ def _do_autopick(season_id: int, expected_pick_number: int):
         # make_pick handles roster entry + single db.commit
         pick = draft_service.make_pick(db, draft, team.id, sp.id, season, team_ids)
 
-        logger.info(f"Autopick: season {season_id} pick {pick.pick_number} team {team.id} → {sp.id}")
+        logger.info(f"Autopick: season {season_id} pick {pick.pick_number} team {team.id} → sp={sp.id} tier={sp.tier} cost={sp.point_cost} pts_before={team.points_remaining}")
 
         # Broadcast state change to all connected clients
         if _loop and _broadcast_fn:
