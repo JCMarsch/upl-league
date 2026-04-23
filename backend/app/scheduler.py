@@ -73,7 +73,10 @@ def _do_autopick(season_id: int, expected_pick_number: int):
             t.id for t in db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()
         ]
 
+        logger.info(f"Autopick: calling get_best_autopick season={season_id} team={team.id} points={team.points_remaining}")
         sp = draft_service.get_best_autopick(db, season_id, team, season)
+        logger.info(f"Autopick: get_best_autopick returned {sp.id if sp else None}")
+
         if not sp:
             # Final fallback: any legal undrafted pokemon that fits the budget
             sp = (

@@ -28,6 +28,7 @@ interface SeasonPokemon {
   tier: string | null
   point_cost: number | null
   is_legal: boolean
+  is_mega: boolean | null
   drafted_by_team_id: number | null
   species_name: string | null
   species_sprite_url: string | null
@@ -68,6 +69,7 @@ export default function DraftPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [tierFilter, setTierFilter] = useState('')
+  const [megaTab, setMegaTab] = useState(false)
   const [picking, setPicking] = useState(false)
   const [msg, setMsg] = useState('')
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
@@ -209,7 +211,11 @@ export default function DraftPage() {
   }
 
   const available = pokemon.filter(p => p.is_legal && !p.drafted_by_team_id)
-  const filtered = available.filter(p => {
+  const tabAvailable = megaTab
+    ? available.filter(p => p.is_mega)
+    : available.filter(p => !p.is_mega)
+  const regularTiers = TIERS.filter(t => t !== 'Mega')
+  const filtered = tabAvailable.filter(p => {
     if (tierFilter && p.tier !== tierFilter) return false
     if (search && !p.species_name?.toLowerCase().includes(search.toLowerCase())) return false
     return true
@@ -338,6 +344,30 @@ export default function DraftPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Available Pokemon */}
         <div className="lg:col-span-2 space-y-3">
+          {/* Mega / Regular tabs */}
+          <div className="flex gap-0 border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
+            <button
+              onClick={() => { setMegaTab(false); setTierFilter('') }}
+              className="flex-1 py-1.5 text-sm font-medium transition-colors"
+              style={{
+                background: !megaTab ? 'var(--color-primary)' : 'var(--color-surface)',
+                color: !megaTab ? '#fff' : 'var(--color-text-muted)',
+              }}
+            >
+              Regular ({available.filter(p => !p.is_mega).length})
+            </button>
+            <button
+              onClick={() => { setMegaTab(true); setTierFilter('') }}
+              className="flex-1 py-1.5 text-sm font-medium transition-colors"
+              style={{
+                background: megaTab ? '#db2777' : 'var(--color-surface)',
+                color: megaTab ? '#fff' : 'var(--color-text-muted)',
+              }}
+            >
+              Mega ({available.filter(p => p.is_mega).length})
+            </button>
+          </div>
+
           <div className="flex gap-2 flex-wrap">
             <input
               placeholder="Search Pokemon..."
@@ -346,21 +376,23 @@ export default function DraftPage() {
               className="flex-1 border rounded px-3 py-1.5 text-sm"
               style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
             />
-            <select
-              value={tierFilter}
-              onChange={e => setTierFilter(e.target.value)}
-              className="border rounded px-2 py-1.5 text-sm"
-              style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-            >
-              <option value="">All Tiers</option>
-              {TIERS.map(t => <option key={t}>{t}</option>)}
-            </select>
+            {!megaTab && (
+              <select
+                value={tierFilter}
+                onChange={e => setTierFilter(e.target.value)}
+                className="border rounded px-2 py-1.5 text-sm"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+              >
+                <option value="">All Tiers</option>
+                {regularTiers.map(t => <option key={t}>{t}</option>)}
+              </select>
+            )}
           </div>
 
           <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{filtered.length} available</div>
 
           <div className="overflow-y-auto border rounded-lg" style={{ borderColor: 'var(--color-border)', maxHeight: '60vh' }}>
-            {TIERS.map(tier => {
+            {(megaTab ? ['Mega'] : regularTiers).map(tier => {
               const tierPokemon = filtered.filter(p => p.tier === tier)
               if (tierPokemon.length === 0) return null
               return (
