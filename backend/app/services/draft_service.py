@@ -1,10 +1,14 @@
 """Draft state machine service."""
 from typing import List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.models.draft import Draft, DraftOrder, DraftPick
 from app.models.team import Team
 from app.models.pokemon import SeasonPokemon, RosterPokemon
 from app.models.season import Season
+
+
+def _is_mega(sp: SeasonPokemon) -> bool:
+    return bool(sp.species and sp.species.is_mega)
 
 
 def generate_snake_order(team_ids: List[int], num_rounds: int) -> List[dict]:
@@ -150,6 +154,7 @@ def get_best_autopick(
             SeasonPokemon.is_legal == True,
             SeasonPokemon.drafted_by_team_id == None,
         )
+        .options(joinedload(SeasonPokemon.species))
         .all()
     )
     if not available:
@@ -224,13 +229,13 @@ def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
         db.query(SeasonPokemon)
         .join(RosterPokemon, RosterPokemon.season_pokemon_id == SeasonPokemon.id)
         .filter(RosterPokemon.team_id == team_id, SeasonPokemon.season_id == season_id)
+        .options(joinedload(SeasonPokemon.species))
         .all()
     )
     counts: dict = {}
     for sp in roster:
-        if sp.is_mega:
+        if _is_mega(sp):
             counts["mega"] = counts.get("mega", 0) + 1
-            # Mega fills the "mega" required slot, not a letter-tier slot
         elif sp.tier:
             counts[sp.tier] = counts.get(sp.tier, 0) + 1
     return counts
@@ -239,10 +244,9 @@ def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
 def _update_required_after_pick(candidate: SeasonPokemon, remaining_required: dict) -> dict:
     """Return updated remaining_required after picking candidate."""
     new_req = dict(remaining_required)
-    if candidate.is_mega:
+    if _is_mega(candidate):
         if new_req.get("mega", 0) > 0:
             new_req["mega"] = new_req["mega"] - 1
-        # Mega does not also consume a letter-tier required slot
     elif candidate.tier and new_req.get(candidate.tier, 0) > 0:
         new_req[candidate.tier] = new_req[candidate.tier] - 1
     return {k: v for k, v in new_req.items() if v > 0}
@@ -309,9 +313,8 @@ def _feasible(
 def _candidates_for_slot(available: List[SeasonPokemon], slot: str) -> List[SeasonPokemon]:
     """Return available pokemon that satisfy the given required slot."""
     if slot == "mega":
-        return [p for p in available if p.is_mega]
-    # Mega Pokemon fill the "mega" slot, not letter-tier slots
-    return [p for p in available if p.tier == slot and not p.is_mega]
+        return [p for p in available if _is_mega(p)]
+    return [p for p in available if p.tier == slot and not _is_mega(p)]
 
 
 def make_pick(
