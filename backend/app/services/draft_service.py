@@ -37,6 +37,25 @@ def get_next_team_snake(
         return team_ids[num_teams - 1 - pos_in_round]
 
 
+def get_highest_tier_available(db: Session, season_id: int) -> Optional[SeasonPokemon]:
+    """Simple tier-order query (no budget check). Used by tests and as a fallback."""
+    tier_order = ["S", "A", "B", "C", "D", "Free"]
+    for tier in tier_order:
+        sp = db.query(SeasonPokemon).filter(
+            SeasonPokemon.season_id == season_id,
+            SeasonPokemon.tier == tier,
+            SeasonPokemon.is_legal == True,
+            SeasonPokemon.drafted_by_team_id == None,
+        ).first()
+        if sp:
+            return sp
+    return db.query(SeasonPokemon).filter(
+        SeasonPokemon.season_id == season_id,
+        SeasonPokemon.is_legal == True,
+        SeasonPokemon.drafted_by_team_id == None,
+    ).first()
+
+
 def get_best_autopick(
     db: Session,
     season_id: int,
@@ -235,7 +254,10 @@ def make_pick(
     now = datetime.now(timezone.utc)
     time_taken = None
     if draft.pick_started_at:
-        delta = (now - draft.pick_started_at).total_seconds()
+        started = draft.pick_started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        delta = (now - started).total_seconds()
         time_taken = max(0, round(delta))
 
     pick = DraftPick(
