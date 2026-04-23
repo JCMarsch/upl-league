@@ -28,3 +28,12 @@ class DraftStateOut(BaseModel):
     pick_started_at: Optional[datetime]
 
     model_config = {"from_attributes": True}
+
+
+class PickConfirmedOut(BaseModel):
+    """Response from POST /pick — everything the frontend needs to update locally."""
+    pick: DraftPickOut
+    state: DraftStateOut
+    drafted_pokemon_id: int
+    team_id: int
+    points_remaining: int

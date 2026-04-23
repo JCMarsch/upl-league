@@ -358,6 +358,10 @@ def make_pick(
     team = db.query(Team).filter(Team.id == team_id).first()
     team.points_remaining -= sp.point_cost or 0
 
+    # Add to roster in the same transaction
+    from app.models.pokemon import RosterPokemon as _RP
+    db.add(_RP(team_id=team_id, season_pokemon_id=season_pokemon_id))
+
     # Advance pick number
     draft.current_pick_number = pick_num + 1
 
@@ -374,4 +378,5 @@ def make_pick(
 
     db.commit()
     db.refresh(pick)
+    db.refresh(team)
     return pick

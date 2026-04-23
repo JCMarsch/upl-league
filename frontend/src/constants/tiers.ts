@@ -1,7 +1,8 @@
-export const TIERS = ['S', 'A', 'B', 'C', 'D', 'Free'] as const
+export const TIERS = ['Mega', 'S', 'A', 'B', 'C', 'D', 'Free'] as const
 export type TierName = typeof TIERS[number]
 
 export const TIER_COLORS: Record<string, { bg: string; border: string; label: string }> = {
+  Mega:     { bg: '#fce7f3', border: '#f472b6', label: '#db2777' },
   S:        { bg: '#fee2e2', border: '#f87171', label: '#ef4444' },
   A:        { bg: '#ffedd5', border: '#fb923c', label: '#f97316' },
   B:        { bg: '#fef9c3', border: '#facc15', label: '#eab308' },

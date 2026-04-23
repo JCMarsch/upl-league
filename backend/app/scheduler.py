@@ -75,13 +75,25 @@ def _do_autopick(season_id: int, expected_pick_number: int):
 
         sp = draft_service.get_best_autopick(db, season_id, team, season)
         if not sp:
-            logger.warning(f"Autopick: no valid pokemon for season {season_id}, pick {expected_pick_number}")
+            # Final fallback: any legal undrafted pokemon that fits the budget
+            sp = (
+                db.query(SeasonPokemon)
+                .filter(
+                    SeasonPokemon.season_id == season_id,
+                    SeasonPokemon.is_legal == True,
+                    SeasonPokemon.drafted_by_team_id == None,
+                    SeasonPokemon.point_cost <= team.points_remaining,
+                )
+                .first()
+            )
+        if not sp:
+            logger.warning(f"Autopick: no affordable pokemon for season {season_id} pick {expected_pick_number} — ending draft")
+            draft.status = "complete"
+            db.commit()
             return
 
+        # make_pick handles roster entry + single db.commit
         pick = draft_service.make_pick(db, draft, team.id, sp.id, season, team_ids)
-        roster_entry = RosterPokemon(team_id=pick.team_id, season_pokemon_id=sp.id)
-        db.add(roster_entry)
-        db.commit()
 
         logger.info(f"Autopick: season {season_id} pick {pick.pick_number} team {team.id} → {sp.id}")
 

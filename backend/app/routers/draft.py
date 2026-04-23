@@ -12,7 +12,7 @@ from app.models.team import Team
 from app.models.draft import Draft, DraftOrder, DraftPick
 from app.models.pokemon import SeasonPokemon, RosterPokemon
 from app.models.user import User
-from app.schemas.draft import DraftPickCreate, DraftPickOut, DraftStateOut
+from app.schemas.draft import DraftPickCreate, DraftPickOut, DraftStateOut, PickConfirmedOut
 from app.services import draft_service
 
 router = APIRouter(prefix="/draft", tags=["draft"])
@@ -165,14 +165,10 @@ def make_pick(
     from app import scheduler as draft_scheduler
     draft_scheduler.cancel_autopick(season_id)
 
+    # make_pick handles roster entry + single db.commit
     pick = draft_service.make_pick(db, draft, draft.current_team_id, sp.id, season, team_ids)
 
-    # Add to roster
-    roster_entry = RosterPokemon(team_id=pick.team_id, season_pokemon_id=sp.id)
-    db.add(roster_entry)
-    db.commit()
-
-    # Update round timer for reducing mode
+    # Update round timer for reducing mode (only if changed)
     db.refresh(draft)
     if draft.status == 'active' and season.draft_timer_seconds:
         num_teams = len(team_ids)
@@ -184,7 +180,17 @@ def make_pick(
             db.refresh(draft)
 
     _schedule_pick_timer(draft, season)
-    return pick
+
+    # Reload team points_remaining after make_pick committed
+    picking_team = db.query(Team).filter(Team.id == pick.team_id).first()
+
+    return PickConfirmedOut(
+        pick=DraftPickOut.model_validate(pick),
+        state=DraftStateOut.model_validate(draft),
+        drafted_pokemon_id=sp.id,
+        team_id=pick.team_id,
+        points_remaining=picking_team.points_remaining,
+    )
 
 
 @router.post("/{season_id}/reset")

@@ -123,8 +123,19 @@ export default function DraftPage() {
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data)
       if (msg.type === 'pick') {
-        fetchState()
-        setPicks(prev => [...prev, msg.pick])
+        // Apply update locally — no round-trip needed
+        if (msg.state) setDraftState(msg.state)
+        if (msg.drafted_pokemon_id && msg.team_id != null) {
+          setPokemon(prev => prev.map(p =>
+            p.id === msg.drafted_pokemon_id ? { ...p, drafted_by_team_id: msg.team_id } : p
+          ))
+        }
+        if (msg.team_id != null && msg.points_remaining != null) {
+          setTeams(prev => prev.map(t =>
+            t.id === msg.team_id ? { ...t, points_remaining: msg.points_remaining } : t
+          ))
+        }
+        if (msg.pick) setPicks(prev => [...prev, msg.pick])
         setPendingPick(null)
       } else if (msg.type === 'state_change') {
         fetchState()
@@ -141,10 +152,30 @@ export default function DraftPage() {
     if (!pendingPick || !seasonId) return
     setPicking(true); setMsg('')
     try {
-      await axios.post(`/draft/${seasonId}/pick`, { season_pokemon_id: pendingPick.id }, { withCredentials: true })
-      await fetchState()
-      wsRef.current?.send(JSON.stringify({ type: 'state_change' }))
+      const { data } = await axios.post(
+        `/draft/${seasonId}/pick`,
+        { season_pokemon_id: pendingPick.id },
+        { withCredentials: true },
+      )
+      // Update everything locally from the response — no extra fetches
+      setDraftState(data.state)
+      setPokemon(prev => prev.map(p =>
+        p.id === data.drafted_pokemon_id ? { ...p, drafted_by_team_id: data.team_id } : p
+      ))
+      setTeams(prev => prev.map(t =>
+        t.id === data.team_id ? { ...t, points_remaining: data.points_remaining } : t
+      ))
+      setPicks(prev => [...prev, data.pick])
       setPendingPick(null)
+      // Broadcast to other clients with full pick data so they can also update locally
+      wsRef.current?.send(JSON.stringify({
+        type: 'pick',
+        state: data.state,
+        drafted_pokemon_id: data.drafted_pokemon_id,
+        team_id: data.team_id,
+        points_remaining: data.points_remaining,
+        pick: data.pick,
+      }))
     } catch (e: any) {
       setMsg(e.response?.data?.detail || 'Pick failed')
     } finally { setPicking(false) }
