@@ -80,16 +80,41 @@ SKIP_EXACT: set[str] = {
     "koraidon-swimming-build", "koraidon-gliding-build",
     "miraidon-low-power-mode", "miraidon-drive-mode",
     "miraidon-aquatic-mode", "miraidon-glide-mode",
+    # One draftable slot — only base is kept
+    "greninja-battle-bond",
+    "castform-sunny", "castform-rainy", "castform-snowy",
+    "ogerpon-wellspring-mask", "ogerpon-hearthflame-mask", "ogerpon-cornerstone-mask",
+    # Battle-only transformations
+    "keldeo-resolute", "meloetta-pirouette", "zygarde-complete",
 }
 
 SKIP_PREFIXES: tuple[str, ...] = (
     "vivillon-", "alcremie-", "furfrou-", "unown-", "spewpa-", "scatterbug-",
+    "pikachu-",  # only base pikachu is draftable
 )
 
 SKIP_SUFFIXES: tuple[str, ...] = (
     "-gmax",   # Gigantamax — battle-only transformation, same pokemon as base
     "-totem",  # Totem Pokemon — same species, just larger
 )
+
+# Base formes whose slug matches the species name but still need a forme qualifier in the display name
+_BASE_FORME_NAME_OVERRIDES: dict[str, str] = {
+    "lycanroc": "Lycanroc-Midday",
+    "meowstic": "Meowstic-Male",
+    "basculegion": "Basculegion-Male",
+}
+
+
+def _derive_name(slug: str) -> str:
+    """Return a human-readable display name for a Pokemon slug."""
+    if slug in _BASE_FORME_NAME_OVERRIDES:
+        return _BASE_FORME_NAME_OVERRIDES[slug]
+    # Female formes: strip trailing -f and append Female
+    if slug.endswith("-f"):
+        base = slug[:-2]
+        return "-".join(p.capitalize() for p in base.split("-")) + "-Female"
+    return "-".join(p.capitalize() for p in slug.split("-"))
 
 
 def _should_skip(slug: str) -> bool:
@@ -146,7 +171,7 @@ def _upsert(db: Session, slug: str, data: dict) -> str:
 
     fields = dict(
         pokedex_number=dex_num,
-        name=species_name,
+        name=_derive_name(slug),
         is_base_forme=(slug == species_name),
         is_mega="-mega" in slug,
         is_regional_variant=any(slug.endswith(s) for s in ["-alola", "-galar", "-hisui", "-paldea"]),

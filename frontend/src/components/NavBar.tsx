@@ -141,6 +141,9 @@ export default function NavBar() {
             { to: '/tier-list', label: 'Tier List' },
             { to: '/pokemon', label: 'Pokemon' },
             { to: '/schedule', label: 'Schedule' },
+            { to: '/draft-board', label: 'Draft Board' },
+            { to: '/analytics', label: 'Analytics' },
+            { to: '/awards', label: 'Awards' },
             { to: '/history', label: 'History' },
             ...(user ? [
               { to: '/draft', label: 'Draft' },
