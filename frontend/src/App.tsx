@@ -17,6 +17,7 @@ import SeasonHistoryPage from './pages/SeasonHistoryPage'
 import ManagerPage from './pages/ManagerPage'
 import NotificationsPage from './pages/NotificationsPage'
 import TeamsListPage from './pages/TeamsListPage'
+import DraftBoardPage from './pages/DraftBoardPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 import logo from './assets/APL_Logo.png'
@@ -69,6 +70,7 @@ function App() {
         <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
         <Route path="/history/:seasonId" element={<Layout><SeasonHistoryPage /></Layout>} />
         <Route path="/managers/:userId" element={<Layout><ManagerPage /></Layout>} />
+        <Route path="/draft-board" element={<Layout><DraftBoardPage /></Layout>} />
 
         {/* Protected pages (login required) */}
         <Route path="/draft" element={<ProtectedRoute><Layout><DraftPage /></Layout></ProtectedRoute>} />

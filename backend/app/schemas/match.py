@@ -107,5 +107,10 @@ class ScheduleOut(BaseModel):
     home_team_id: int
     away_team_id: int
     status: str
+    match_id: Optional[int] = None
+    home_games_won: int = 0
+    away_games_won: int = 0
+    match_status: Optional[str] = None
+    winner_team_id: Optional[int] = None
 
     model_config = {"from_attributes": True}

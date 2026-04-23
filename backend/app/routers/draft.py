@@ -179,6 +179,42 @@ def get_draft_state(season_id: int, db: Session = Depends(get_db)):
     return draft
 
 
+@router.get("/{season_id}/board")
+def get_draft_board(season_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
+    picks = (
+        db.query(SeasonPokemon)
+        .options(
+            joinedload(SeasonPokemon.species),
+            joinedload(SeasonPokemon.drafted_by_team),
+        )
+        .filter(
+            SeasonPokemon.season_id == season_id,
+            SeasonPokemon.drafted_by_team_id.isnot(None),
+        )
+        .order_by(SeasonPokemon.draft_pick_number)
+        .all()
+    )
+    return [
+        {
+            "pick_number": sp.draft_pick_number,
+            "team_id": sp.drafted_by_team_id,
+            "team_name": sp.drafted_by_team.name if sp.drafted_by_team else None,
+            "team_abbreviation": sp.drafted_by_team.abbreviation if sp.drafted_by_team else None,
+            "team_primary_color": sp.drafted_by_team.primary_color if sp.drafted_by_team else "#888",
+            "team_secondary_color": sp.drafted_by_team.secondary_color if sp.drafted_by_team else "#888",
+            "tier": sp.tier,
+            "point_cost": sp.point_cost,
+            "species_id": sp.species_id,
+            "species_name": sp.species.name if sp.species else None,
+            "species_sprite_url": sp.species.sprite_url if sp.species else None,
+            "species_type1": sp.species.type1 if sp.species else None,
+            "species_type2": sp.species.type2 if sp.species else None,
+        }
+        for sp in picks
+    ]
+
+
 @router.websocket("/ws/{season_id}")
 async def draft_websocket(websocket: WebSocket, season_id: int):
     await websocket.accept()

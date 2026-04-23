@@ -58,7 +58,31 @@ def generate_schedule(
 
 @router.get("/seasons/{season_id}/schedule", response_model=List[ScheduleOut])
 def get_schedule(season_id: int, db: Session = Depends(get_db)):
-    return db.query(Schedule).filter(Schedule.season_id == season_id).all()
+    from sqlalchemy.orm import joinedload as _jl
+    schedules = (
+        db.query(Schedule)
+        .options(_jl(Schedule.match))
+        .filter(Schedule.season_id == season_id)
+        .order_by(Schedule.week_number)
+        .all()
+    )
+    result = []
+    for s in schedules:
+        m = s.match
+        result.append(ScheduleOut(
+            id=s.id,
+            season_id=s.season_id,
+            week_number=s.week_number,
+            home_team_id=s.home_team_id,
+            away_team_id=s.away_team_id,
+            status=s.status,
+            match_id=m.id if m else None,
+            home_games_won=m.home_games_won if m else 0,
+            away_games_won=m.away_games_won if m else 0,
+            match_status=m.status if m else None,
+            winner_team_id=m.winner_team_id if m else None,
+        ))
+    return result
 
 
 @router.get("/matches/{match_id}", response_model=MatchOut)
