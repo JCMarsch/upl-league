@@ -35,11 +35,11 @@ function Home() {
   )
 }
 
-function Layout({ children }: { children: React.ReactNode }) {
+function Layout({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div style={{ background: 'var(--color-bg)', minHeight: '100vh', color: 'var(--color-text)' }}>
       <NavBar />
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className={`${wide ? 'w-full' : 'max-w-7xl mx-auto'} px-4 py-6`}>
         {children}
       </main>
     </div>
@@ -64,7 +64,7 @@ function App() {
         <Route path="/" element={<Layout><Home /></Layout>} />
         <Route path="/standings" element={<Layout><StandingsPage /></Layout>} />
         <Route path="/tier-list" element={<Layout><TierListPage /></Layout>} />
-        <Route path="/pokemon" element={<Layout><PokemonDatabasePage /></Layout>} />
+        <Route path="/pokemon" element={<Layout wide><PokemonDatabasePage /></Layout>} />
         <Route path="/schedule" element={<Layout><SchedulePage /></Layout>} />
         <Route path="/matches/:matchId" element={<Layout><MatchPage /></Layout>} />
         <Route path="/teams/:teamId" element={<Layout><TeamPage /></Layout>} />
