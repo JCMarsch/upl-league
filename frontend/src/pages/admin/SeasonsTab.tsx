@@ -38,7 +38,7 @@ function slotsFromSeason(s: Season): SlotMap {
 function SlotsEditor({ slots, onChange }: { slots: SlotMap; onChange: (s: SlotMap) => void }) {
   return (
     <div className="col-span-2">
-      <label className="block text-xs mb-1 font-medium">Required picks per tier (0 = no limit)</label>
+      <label className="block text-xs mb-1 font-medium">Min required picks per tier — teams must draft at least this many from each tier</label>
       <div className="grid grid-cols-6 gap-2">
         {SLOT_TIERS.map(tier => {
           const key = tier === 'Mega' ? 'mega' : tier
