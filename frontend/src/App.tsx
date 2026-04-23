@@ -19,6 +19,7 @@ import NotificationsPage from './pages/NotificationsPage'
 import TeamsListPage from './pages/TeamsListPage'
 import DraftBoardPage from './pages/DraftBoardPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import AwardsPage from './pages/AwardsPage'
 import { useAuthStore } from './store/authStore'
 import { useEffect } from 'react'
 import logo from './assets/APL_Logo.png'
@@ -73,6 +74,7 @@ function App() {
         <Route path="/managers/:userId" element={<Layout><ManagerPage /></Layout>} />
         <Route path="/draft-board" element={<Layout><DraftBoardPage /></Layout>} />
         <Route path="/analytics" element={<Layout><AnalyticsPage /></Layout>} />
+        <Route path="/awards" element={<Layout><AwardsPage /></Layout>} />
 
         {/* Protected pages (login required) */}
         <Route path="/draft" element={<ProtectedRoute><Layout><DraftPage /></Layout></ProtectedRoute>} />

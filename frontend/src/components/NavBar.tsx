@@ -49,6 +49,7 @@ export default function NavBar() {
         <Link to="/schedule" className="hover:underline">Schedule</Link>
         <Link to="/draft-board" className="hover:underline">Draft Board</Link>
         <Link to="/analytics" className="hover:underline">Analytics</Link>
+        <Link to="/awards" className="hover:underline">Awards</Link>
         <Link to="/history" className="hover:underline">History</Link>
         {user && (
           <>

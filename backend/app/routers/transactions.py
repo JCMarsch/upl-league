@@ -313,3 +313,68 @@ def cancel_trade(
     trade.status = "cancelled"
     db.commit()
     return {"status": "cancelled"}
+
+
+@router.get("/seasons/{season_id}/transaction-feed")
+def transaction_feed(season_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import joinedload
+
+    waivers = (
+        db.query(Waiver)
+        .options(
+            joinedload(Waiver.team),
+            joinedload(Waiver.add_species),
+            joinedload(Waiver.drop_species),
+        )
+        .filter(Waiver.season_id == season_id, Waiver.status == "approved")
+        .all()
+    )
+
+    trades = (
+        db.query(Trade)
+        .options(
+            joinedload(Trade.proposed_by_team),
+            joinedload(Trade.proposed_to_team),
+            joinedload(Trade.assets).joinedload(TradeAsset.season_pokemon).joinedload(SeasonPokemon.species),
+        )
+        .filter(Trade.season_id == season_id, Trade.status == "executed")
+        .all()
+    )
+
+    entries = []
+
+    for w in waivers:
+        entries.append({
+            "type": "waiver",
+            "date": (w.processed_at or w.submitted_at).isoformat() if (w.processed_at or w.submitted_at) else None,
+            "week_number": w.week_number,
+            "team_id": w.team_id,
+            "team_name": w.team.name if w.team else None,
+            "team_abbreviation": w.team.abbreviation if w.team else None,
+            "add_species_name": w.add_species.name if w.add_species else None,
+            "drop_species_name": w.drop_species.name if w.drop_species else None,
+        })
+
+    for t in trades:
+        assets_out = []
+        for a in t.assets:
+            sp = a.season_pokemon
+            assets_out.append({
+                "from_team_id": a.from_team_id,
+                "to_team_id": a.to_team_id,
+                "species_name": sp.species.name if sp and sp.species else None,
+            })
+        entries.append({
+            "type": "trade",
+            "date": (t.resolved_at or t.approved_at or t.proposed_at).isoformat() if (t.resolved_at or t.approved_at or t.proposed_at) else None,
+            "team_a_id": t.proposed_by_team_id,
+            "team_a_name": t.proposed_by_team.name if t.proposed_by_team else None,
+            "team_a_abbreviation": t.proposed_by_team.abbreviation if t.proposed_by_team else None,
+            "team_b_id": t.proposed_to_team_id,
+            "team_b_name": t.proposed_to_team.name if t.proposed_to_team else None,
+            "team_b_abbreviation": t.proposed_to_team.abbreviation if t.proposed_to_team else None,
+            "assets": assets_out,
+        })
+
+    entries.sort(key=lambda e: e.get("date") or "", reverse=True)
+    return entries

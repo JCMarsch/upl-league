@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime, timezone
 from app.database import get_db
 from app.auth import require_admin, get_current_user
 from app.models.season import Season
 from app.models.team import Team
-from app.models.stats import TeamSeasonStats, Award, SeasonResult
+from app.models.stats import TeamSeasonStats, PokemonSeasonStats, Award, SeasonResult
+from app.models.schedule import GameStat, GameKillEvent, Game, Match
+from app.models.pokemon import PokemonSpecies
 from app.models.user import User
 from pydantic import BaseModel
 from typing import Optional, List
@@ -182,3 +185,115 @@ def create_award(
     db.commit()
     db.refresh(award)
     return {"id": award.id, "name": award.name, "team_id": award.recipient_team_id}
+
+
+@router.delete("/seasons/{season_id}/awards/{award_id}")
+def delete_award(
+    season_id: int,
+    award_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    award = db.query(Award).filter(Award.id == award_id, Award.season_id == season_id).first()
+    if not award:
+        raise HTTPException(status_code=404, detail="Award not found")
+    db.delete(award)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/awards")
+def get_all_awards(db: Session = Depends(get_db)):
+    awards = db.query(Award).order_by(Award.season_id.desc(), Award.awarded_at.desc()).all()
+    result = []
+    for a in awards:
+        season = db.query(Season).filter(Season.id == a.season_id).first()
+        team = db.query(Team).filter(Team.id == a.recipient_team_id).first() if a.recipient_team_id else None
+        result.append({
+            "id": a.id,
+            "season_id": a.season_id,
+            "season_name": season.name if season else f"Season {a.season_id}",
+            "name": a.name,
+            "description": a.description,
+            "recipient_team_id": a.recipient_team_id,
+            "recipient_team_name": team.name if team else None,
+            "recipient_notes": a.recipient_notes,
+            "is_auto_calculated": a.is_auto_calculated,
+        })
+    return result
+
+
+@router.get("/records")
+def get_records(db: Session = Depends(get_db)):
+    records = {}
+
+    # Most kills in a single season (Pokemon)
+    top_pss = (
+        db.query(PokemonSeasonStats)
+        .order_by(PokemonSeasonStats.total_kills.desc())
+        .first()
+    )
+    if top_pss and (top_pss.total_kills or 0) > 0:
+        species = db.query(PokemonSpecies).filter(PokemonSpecies.id == top_pss.species_id).first()
+        team = db.query(Team).filter(Team.id == top_pss.team_id).first()
+        season = db.query(Season).filter(Season.id == top_pss.season_id).first()
+        records["most_kills_season_pokemon"] = {
+            "value": top_pss.total_kills,
+            "species_name": species.name if species else None,
+            "team_name": team.name if team else None,
+            "season_name": season.name if season else None,
+        }
+
+    # Best win ratio in a season (team, min 3 games)
+    top_tss = (
+        db.query(TeamSeasonStats)
+        .filter(TeamSeasonStats.match_wins + TeamSeasonStats.match_losses + TeamSeasonStats.match_draws >= 3)
+        .order_by(TeamSeasonStats.win_percentage.desc())
+        .first()
+    )
+    if top_tss:
+        team = db.query(Team).filter(Team.id == top_tss.team_id).first()
+        season = db.query(Season).filter(Season.id == top_tss.season_id).first()
+        records["best_win_pct_season"] = {
+            "value": round((top_tss.win_percentage or 0.0) * 100, 1),
+            "record": f"{top_tss.match_wins}W-{top_tss.match_losses}L",
+            "team_name": team.name if team else None,
+            "season_name": season.name if season else None,
+        }
+
+    # Most kills in a single game (Pokemon)
+    top_gs = (
+        db.query(GameStat)
+        .order_by((GameStat.direct_kills + GameStat.passive_kills).desc())
+        .first()
+    )
+    if top_gs and (top_gs.direct_kills + top_gs.passive_kills) > 0:
+        species = db.query(PokemonSpecies).filter(PokemonSpecies.id == top_gs.species_id).first()
+        team = db.query(Team).filter(Team.id == top_gs.team_id).first()
+        records["most_kills_single_game"] = {
+            "value": top_gs.direct_kills + top_gs.passive_kills,
+            "species_name": species.name if species else None,
+            "team_name": team.name if team else None,
+            "game_id": top_gs.game_id,
+        }
+
+    # Longest / shortest game by turn count
+    turn_subq = (
+        db.query(GameKillEvent.game_id, func.max(GameKillEvent.turn_number).label("max_turn"))
+        .group_by(GameKillEvent.game_id)
+        .subquery()
+    )
+    longest = db.query(turn_subq).order_by(turn_subq.c.max_turn.desc()).first()
+    if longest:
+        records["longest_game"] = {"value": longest.max_turn, "label": "turns", "game_id": longest.game_id}
+
+    shortest = (
+        db.query(turn_subq)
+        .filter(turn_subq.c.max_turn >= 3)
+        .order_by(turn_subq.c.max_turn.asc())
+        .first()
+    )
+    if shortest:
+        records["shortest_game"] = {"value": shortest.max_turn, "label": "turns", "game_id": shortest.game_id}
+
+    return records
