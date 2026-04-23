@@ -573,7 +573,7 @@ function GameWizardStep({
           <input
             value={draft.replayUrl}
             onChange={e => onChange({ ...draft, replayUrl: e.target.value, replayParsed: false })}
-            placeholder="https://replay.pokemonshowdown.com/..."
+            placeholder="https://replay.pokemonshowdown.com/... or psim.us replay URL"
             className="flex-1 rounded px-3 py-2 text-sm"
             style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}
           />

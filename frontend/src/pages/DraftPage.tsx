@@ -420,15 +420,31 @@ export default function DraftPage() {
                 <div className="text-xs font-mono" style={{ color: 'var(--color-primary)' }}>{team.points_remaining} pts</div>
               </div>
               <div className="flex flex-wrap gap-1">
-                {teamPokemon(team.id).map(p => (
-                  <img
-                    key={p.id}
-                    src={p.species_sprite_url ?? ''}
-                    alt={p.species_name ?? ''}
-                    className="w-8 h-8 object-contain"
-                    title={p.species_name ?? ''}
-                  />
-                ))}
+                {teamPokemon(team.id).map(p => {
+                  const pickNum = picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number
+                  const tierColors: Record<string, string> = { S: '#f59e0b', A: '#8b5cf6', B: '#3b82f6', C: '#22c55e', D: '#ef4444', Mega: '#ec4899', Free: '#9ca3af' }
+                  const tColor = tierColors[p.tier ?? ''] ?? '#9ca3af'
+                  return (
+                    <div
+                      key={p.id}
+                      className="relative"
+                      style={{ width: 40, height: 44 }}
+                      title={`#${pickNum ?? '?'} ${p.species_name} · ${p.tier ?? 'N/A'} · ${p.point_cost ?? '?'}pts`}
+                    >
+                      <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-10 h-8 object-contain" />
+                      {pickNum !== undefined && (
+                        <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
+                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>
+                          {pickNum}
+                        </span>
+                      )}
+                      <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
+                        style={{ background: tColor, color: '#fff', lineHeight: '10px' }}>
+                        {p.tier ?? '?'}
+                      </div>
+                    </div>
+                  )
+                })}
                 {teamPokemon(team.id).length === 0 && (
                   <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No picks yet</span>
                 )}

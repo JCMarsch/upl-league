@@ -47,6 +47,7 @@ export default function NavBar() {
         <Link to="/tier-list" className="hover:underline">Tier List</Link>
         <Link to="/pokemon" className="hover:underline">Pokemon</Link>
         <Link to="/schedule" className="hover:underline">Schedule</Link>
+        <Link to="/playoffs" className="hover:underline">Playoffs</Link>
         <Link to="/draft-board" className="hover:underline">Draft Board</Link>
         <Link to="/analytics" className="hover:underline">Analytics</Link>
         <Link to="/awards" className="hover:underline">Awards</Link>

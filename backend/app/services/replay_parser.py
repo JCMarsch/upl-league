@@ -21,9 +21,9 @@ class ReplayParseError(Exception):
     pass
 
 
-def fetch_replay(replay_id: str) -> dict:
-    """Fetch replay JSON from Showdown."""
-    url = f"https://replay.pokemonshowdown.com/{replay_id}.json"
+def fetch_replay(replay_id: str, base_domain: str = "replay.pokemonshowdown.com") -> dict:
+    """Fetch replay JSON from Showdown or a compatible server."""
+    url = f"https://{base_domain}/{replay_id}.json"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code == 404:
@@ -213,7 +213,7 @@ def parse_replay_from_fixture(data: dict) -> dict:
         return {"error": f"Parse error: {str(e)}", "partial": True}
 
 
-def parse_replay_from_url(replay_id: str) -> dict:
-    """Fetch and parse a replay by ID."""
-    data = fetch_replay(replay_id)
+def parse_replay_from_url(replay_id: str, base_domain: str = "replay.pokemonshowdown.com") -> dict:
+    """Fetch and parse a replay by ID from a given domain."""
+    data = fetch_replay(replay_id, base_domain=base_domain)
     return parse_replay_from_fixture(data)

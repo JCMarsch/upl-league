@@ -242,11 +242,17 @@ def parse_replay_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     import re as _re
-    m = _re.search(r"replay\.pokemonshowdown\.com/([^/?#]+)", data.replay_url)
-    replay_id = m.group(1) if m else data.replay_url.strip("/")
+    # Support replay.pokemonshowdown.com and psim.us-family servers (Smogon)
+    m = _re.search(r"https?://([^/]+)/([^/?#]+)", data.replay_url)
+    if m:
+        domain = m.group(1)
+        replay_id = m.group(2)
+    else:
+        domain = "replay.pokemonshowdown.com"
+        replay_id = data.replay_url.strip("/")
 
     from app.services.replay_parser import parse_replay_from_url
-    result = parse_replay_from_url(replay_id)
+    result = parse_replay_from_url(replay_id, base_domain=domain)
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

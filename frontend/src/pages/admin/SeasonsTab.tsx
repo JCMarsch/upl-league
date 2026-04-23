@@ -120,6 +120,7 @@ export default function SeasonsTab() {
                     { label: 'Year', key: 'year', type: 'number' },
                     { label: 'Points Budget', key: 'points_budget', type: 'number' },
                     { label: 'Roster Size', key: 'roster_size', type: 'number' },
+                    { label: 'Draft Timer (sec)', key: 'draft_timer_seconds', type: 'number' },
                   ].map(({ label, key, type }) => (
                     <div key={key}>
                       <label className="block text-xs mb-1">{label}</label>
