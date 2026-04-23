@@ -157,25 +157,43 @@ def make_pick(
     if (sp.point_cost or 0) > picking_team.points_remaining:
         raise HTTPException(status_code=400, detail="Insufficient points budget")
 
-    # Enforce mega cap
+    # Enforce per-tier slot caps (required_slots acts as exact quota per tier)
     required_slots = season.required_slots or {}
-    max_megas = required_slots.get('mega', 0)
-    if max_megas > 0:
+    if required_slots:
         is_mega = db.query(PokemonSpecies.is_mega).filter(PokemonSpecies.id == sp.species_id).scalar()
         if is_mega:
-            current_mega_count = (
-                db.query(RosterPokemon)
-                .join(SeasonPokemon, SeasonPokemon.id == RosterPokemon.season_pokemon_id)
-                .join(PokemonSpecies, PokemonSpecies.id == SeasonPokemon.species_id)
-                .filter(
-                    RosterPokemon.team_id == draft.current_team_id,
-                    SeasonPokemon.season_id == season_id,
-                    PokemonSpecies.is_mega == True,
+            max_megas = required_slots.get('mega', 0)
+            if max_megas > 0:
+                current_count = (
+                    db.query(RosterPokemon)
+                    .join(SeasonPokemon, SeasonPokemon.id == RosterPokemon.season_pokemon_id)
+                    .join(PokemonSpecies, PokemonSpecies.id == SeasonPokemon.species_id)
+                    .filter(
+                        RosterPokemon.team_id == draft.current_team_id,
+                        SeasonPokemon.season_id == season_id,
+                        PokemonSpecies.is_mega == True,
+                    )
+                    .count()
                 )
-                .count()
-            )
-            if current_mega_count >= max_megas:
-                raise HTTPException(status_code=400, detail=f"Mega slot already filled (max {max_megas} per team)")
+                if current_count >= max_megas:
+                    raise HTTPException(status_code=400, detail=f"Mega slot already filled (max {max_megas} per team)")
+        elif sp.tier and sp.tier in required_slots:
+            tier_max = required_slots[sp.tier]
+            if tier_max > 0:
+                current_count = (
+                    db.query(RosterPokemon)
+                    .join(SeasonPokemon, SeasonPokemon.id == RosterPokemon.season_pokemon_id)
+                    .join(PokemonSpecies, PokemonSpecies.id == SeasonPokemon.species_id)
+                    .filter(
+                        RosterPokemon.team_id == draft.current_team_id,
+                        SeasonPokemon.season_id == season_id,
+                        SeasonPokemon.tier == sp.tier,
+                        PokemonSpecies.is_mega == False,
+                    )
+                    .count()
+                )
+                if current_count >= tier_max:
+                    raise HTTPException(status_code=400, detail=f"{sp.tier}-tier slot already filled (max {tier_max} per team)")
 
     team_ids = [
         t.id for t in db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()

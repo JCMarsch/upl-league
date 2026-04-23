@@ -187,6 +187,13 @@ def get_best_autopick(
     max_megas = required_slots.get('mega', 0)
     current_megas = fulfilled.get('mega', 0)
 
+    # Per-tier caps: build a dict of tier → (max_allowed, current_count)
+    tier_caps = {
+        slot: (cap, fulfilled.get(slot, 0))
+        for slot, cap in required_slots.items()
+        if slot != 'mega' and cap > 0
+    }
+
     # Sort available by cost ascending for safe_budget calculation
     available_sorted_by_cost = sorted(available, key=lambda p: p.point_cost or 0)
 
@@ -205,6 +212,11 @@ def get_best_autopick(
             continue
         if max_megas > 0 and _is_mega(candidate) and current_megas >= max_megas:
             continue
+        # Skip if this non-mega tier is already at its cap
+        if not _is_mega(candidate) and candidate.tier in tier_caps:
+            cap, current = tier_caps[candidate.tier]
+            if current >= cap:
+                continue
 
         remaining_after_pick = team.points_remaining - cost
         picks_after = picks_left - 1
@@ -231,6 +243,10 @@ def get_best_autopick(
         if (p.point_cost or 0) <= team.points_remaining:
             if max_megas > 0 and _is_mega(p) and current_megas >= max_megas:
                 continue
+            if not _is_mega(p) and p.tier in tier_caps:
+                cap, current = tier_caps[p.tier]
+                if current >= cap:
+                    continue
             return p
 
     return None

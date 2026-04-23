@@ -15,13 +15,63 @@ interface Season {
 }
 
 const STATUSES = ['setup', 'draft', 'regular', 'playoffs', 'complete']
+const SLOT_TIERS = ['Mega', 'S', 'A', 'B', 'C', 'D'] as const
+
+type SlotMap = Record<string, number>
+
+function defaultSlots(): SlotMap {
+  return { mega: 1, S: 1, A: 1, B: 1, C: 1, D: 1 }
+}
+
+function slotsFromSeason(s: Season): SlotMap {
+  const rs = s.required_slots || {}
+  return {
+    mega: rs.mega ?? 1,
+    S: rs.S ?? 1,
+    A: rs.A ?? 1,
+    B: rs.B ?? 1,
+    C: rs.C ?? 1,
+    D: rs.D ?? 1,
+  }
+}
+
+function SlotsEditor({ slots, onChange }: { slots: SlotMap; onChange: (s: SlotMap) => void }) {
+  return (
+    <div className="col-span-2">
+      <label className="block text-xs mb-1 font-medium">Required picks per tier (0 = no limit)</label>
+      <div className="grid grid-cols-6 gap-2">
+        {SLOT_TIERS.map(tier => {
+          const key = tier === 'Mega' ? 'mega' : tier
+          return (
+            <div key={tier}>
+              <label className="block text-xs mb-0.5 text-center" style={{ color: 'var(--color-text-muted)' }}>{tier}</label>
+              <input
+                type="number"
+                min={0}
+                value={slots[key] ?? 0}
+                onChange={e => onChange({ ...slots, [key]: +e.target.value })}
+                className="w-full border rounded px-2 py-1 text-sm text-center"
+                style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function SeasonsTab() {
   const [seasons, setSeasons] = useState<Season[]>([])
   const [creating, setCreating] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState({ name: '', year: new Date().getFullYear(), format: 'VGC', points_budget: 100, roster_size: 10, draft_timer_seconds: 90, series_format: 'bo3', max_megas: 1 })
+  const [form, setForm] = useState({
+    name: '', year: new Date().getFullYear(), format: 'VGC',
+    points_budget: 100, roster_size: 10, draft_timer_seconds: 90, series_format: 'bo3',
+  })
+  const [formSlots, setFormSlots] = useState<SlotMap>(defaultSlots())
   const [editForm, setEditForm] = useState<Partial<Season>>({})
+  const [editSlots, setEditSlots] = useState<SlotMap>({})
   const [error, setError] = useState('')
 
   const load = () => axios.get('/seasons').then(r => setSeasons(r.data))
@@ -30,24 +80,25 @@ export default function SeasonsTab() {
   const createSeason = async () => {
     setError('')
     try {
-      const { max_megas, ...rest } = form
-      await axios.post('/seasons', { ...rest, required_slots: { mega: max_megas } }, { withCredentials: true })
+      await axios.post('/seasons', { ...form, required_slots: formSlots }, { withCredentials: true })
       setCreating(false)
-      setForm({ name: '', year: new Date().getFullYear(), format: 'VGC', points_budget: 100, roster_size: 10, draft_timer_seconds: 90, series_format: 'bo3', max_megas: 1 })
+      setForm({ name: '', year: new Date().getFullYear(), format: 'VGC', points_budget: 100, roster_size: 10, draft_timer_seconds: 90, series_format: 'bo3' })
+      setFormSlots(defaultSlots())
       load()
     } catch (e: any) {
       setError(e.response?.data?.detail || 'Failed to create season')
     }
   }
 
+  const startEdit = (season: Season) => {
+    setEditingId(season.id)
+    setEditForm({})
+    setEditSlots(slotsFromSeason(season))
+  }
+
   const saveEdit = async (id: number) => {
     try {
-      const season = seasons.find(s => s.id === id)!
-      const { max_megas, ...editRest } = editForm as any
-      const payload = max_megas !== undefined
-        ? { ...editRest, required_slots: { ...(season.required_slots || {}), mega: max_megas } }
-        : editRest
-      await axios.patch(`/admin/seasons/${id}`, payload, { withCredentials: true })
+      await axios.patch(`/admin/seasons/${id}`, { ...editForm, required_slots: editSlots }, { withCredentials: true })
       setEditingId(null)
       load()
     } catch (e: any) {
@@ -80,7 +131,6 @@ export default function SeasonsTab() {
               { label: 'Points Budget', key: 'points_budget', type: 'number' },
               { label: 'Roster Size', key: 'roster_size', type: 'number' },
               { label: 'Draft Timer (sec)', key: 'draft_timer_seconds', type: 'number' },
-              { label: 'Max Megas per Team', key: 'max_megas', type: 'number' },
             ].map(({ label, key, type }) => (
               <div key={key}>
                 <label className="block text-xs mb-1">{label}</label>
@@ -109,6 +159,7 @@ export default function SeasonsTab() {
                 <option value="bo3">Best of 3</option><option value="bo5">Best of 5</option>
               </select>
             </div>
+            <SlotsEditor slots={formSlots} onChange={setFormSlots} />
           </div>
           <div className="flex gap-2">
             <button onClick={createSeason} className="px-4 py-1.5 rounded text-white text-sm" style={{ background: 'var(--color-primary)' }}>Create</button>
@@ -142,16 +193,6 @@ export default function SeasonsTab() {
                     </div>
                   ))}
                   <div>
-                    <label className="block text-xs mb-1">Max Megas per Team</label>
-                    <input
-                      type="number"
-                      value={(editForm as any).max_megas ?? (season.required_slots?.mega ?? 1)}
-                      onChange={e => setEditForm(f => ({ ...f, max_megas: +e.target.value }))}
-                      className="w-full border rounded px-2 py-1 text-sm"
-                      style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-                    />
-                  </div>
-                  <div>
                     <label className="block text-xs mb-1">Status</label>
                     <select
                       value={editForm.status ?? season.status}
@@ -162,6 +203,7 @@ export default function SeasonsTab() {
                       {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
+                  <SlotsEditor slots={editSlots} onChange={setEditSlots} />
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => saveEdit(season.id)} className="px-4 py-1.5 rounded text-white text-sm" style={{ background: 'var(--color-primary)' }}>Save</button>
@@ -177,10 +219,12 @@ export default function SeasonsTab() {
                     <span>Format: {season.format}</span>
                     <span>Budget: {season.points_budget}pts</span>
                     <span>Roster: {season.roster_size}</span>
-                    <span>Max Megas: {season.required_slots?.mega ?? 1}</span>
+                    {Object.keys(season.required_slots || {}).length > 0 && (
+                      <span>Slots: {Object.entries(season.required_slots).map(([k, v]) => `${k}×${v}`).join(' ')}</span>
+                    )}
                   </div>
                 </div>
-                <button onClick={() => { setEditingId(season.id); setEditForm({}) }} className="text-sm px-3 py-1 border rounded" style={{ borderColor: 'var(--color-border)' }}>Edit</button>
+                <button onClick={() => startEdit(season)} className="text-sm px-3 py-1 border rounded" style={{ borderColor: 'var(--color-border)' }}>Edit</button>
               </div>
             )}
           </div>
