@@ -68,7 +68,7 @@ function MatchupMatrixView({ data }: { data: MatchupMatrix }) {
       {hovered && (
         <div className="text-xs mb-2 px-3 py-1.5 rounded" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
           <span className="font-medium">{data.species.find(s => s.id === hovered.a)?.name}</span>
-          {' → KO'd '}
+          {" → KO'd "}
           <span className="font-medium">{data.species.find(s => s.id === hovered.d)?.name}</span>
           {' · '}
           <span className="font-bold">{hovered.count}×</span>
