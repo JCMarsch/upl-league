@@ -6,7 +6,20 @@ import { TIERS } from '../../constants/tiers'
 interface Pokemon {
   id: number; species_id: number; species_name: string
   tier: string | null; point_cost: number | null; is_legal: boolean
+  pokedex_number: number | null
+  species_type1: string | null; species_type2: string | null
 }
+
+type SortCol = 'name' | 'dex' | 'tier' | 'cost' | 'legal'
+
+const TYPE_BG: Record<string, string> = {
+  Fire: '#ef4444', Water: '#3b82f6', Grass: '#22c55e', Electric: '#eab308',
+  Psychic: '#ec4899', Ice: '#06b6d4', Dragon: '#7c3aed', Dark: '#374151',
+  Fighting: '#b91c1c', Normal: '#9ca3af', Flying: '#38bdf8', Poison: '#a855f7',
+  Ground: '#d97706', Rock: '#92400e', Bug: '#84cc16', Ghost: '#4f46e5',
+  Steel: '#6b7280', Fairy: '#f472b6',
+}
+
 const PAGE_SIZE = 50
 
 export default function PokemonTab() {
@@ -16,6 +29,10 @@ export default function PokemonTab() {
   const [edits, setEdits] = useState<Record<number, { tier?: string; point_cost?: number; is_legal?: boolean }>>({})
   const [search, setSearch] = useState('')
   const [tierFilter, setTierFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [legalFilter, setLegalFilter] = useState<'all' | 'legal' | 'illegal'>('all')
+  const [sortCol, setSortCol] = useState<SortCol>('dex')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -58,7 +75,7 @@ export default function PokemonTab() {
   }, [])
 
   // Reset page when filters change
-  useEffect(() => { setPage(0) }, [search, tierFilter])
+  useEffect(() => { setPage(0) }, [search, tierFilter, typeFilter, legalFilter, sortCol, sortDir])
 
   const setEdit = (id: number, field: string, value: any) => {
     setEdits(e => ({ ...e, [id]: { ...e[id], [field]: value } }))
@@ -161,12 +178,43 @@ export default function PokemonTab() {
     finally { setLocking(false) }
   }
 
-  const filtered = useMemo(() => pokemon.filter(p => {
-    if (search && !p.species_name?.toLowerCase().includes(search.toLowerCase())) return false
-    if (tierFilter === 'none' && p.tier !== null) return false
-    if (tierFilter && tierFilter !== 'none' && p.tier !== tierFilter) return false
-    return true
-  }), [pokemon, search, tierFilter])
+  const types = useMemo(() =>
+    [...new Set(pokemon.flatMap(p => [p.species_type1, p.species_type2].filter(Boolean) as string[]))].sort()
+  , [pokemon])
+
+  const handleSort = (col: SortCol) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const TIER_ORDER: Record<string, number> = { S: 0, A: 1, B: 2, C: 3, D: 4 }
+
+  const filtered = useMemo(() => {
+    let list = pokemon.filter(p => {
+      if (search && !p.species_name?.toLowerCase().includes(search.toLowerCase())) return false
+      if (tierFilter === 'none' && p.tier !== null) return false
+      if (tierFilter && tierFilter !== 'none' && p.tier !== tierFilter) return false
+      if (typeFilter && p.species_type1 !== typeFilter && p.species_type2 !== typeFilter) return false
+      if (legalFilter === 'legal' && !p.is_legal) return false
+      if (legalFilter === 'illegal' && p.is_legal) return false
+      return true
+    })
+    list = [...list].sort((a, b) => {
+      let av: number | string, bv: number | string
+      switch (sortCol) {
+        case 'name':  av = a.species_name ?? ''; bv = b.species_name ?? ''; break
+        case 'dex':   av = a.pokedex_number ?? 9999; bv = b.pokedex_number ?? 9999; break
+        case 'tier':  av = TIER_ORDER[a.tier ?? ''] ?? 99; bv = TIER_ORDER[b.tier ?? ''] ?? 99; break
+        case 'cost':  av = a.point_cost ?? -1; bv = b.point_cost ?? -1; break
+        case 'legal': av = a.is_legal ? 0 : 1; bv = b.is_legal ? 0 : 1; break
+        default:      av = a.pokedex_number ?? 9999; bv = b.pokedex_number ?? 9999
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return list
+  }, [pokemon, search, tierFilter, typeFilter, legalFilter, sortCol, sortDir])
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -235,24 +283,39 @@ export default function PokemonTab() {
       {msg && <p className={`text-sm ${msg.toLowerCase().includes('fail') || msg.toLowerCase().includes('error') ? 'text-red-500' : 'text-green-600'}`}>{msg}</p>}
 
       {/* Filters */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         <input
           placeholder="Search Pokemon..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="border rounded px-2 py-1.5 text-sm flex-1 min-w-40"
-          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+          className="border rounded px-2 py-1.5 text-sm"
+          style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)', minWidth: 180 }}
         />
         <select value={tierFilter} onChange={e => setTierFilter(e.target.value)}
           className="border rounded px-2 py-1.5 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
           <option value="">All Tiers</option>
           {TIERS.map(t => <option key={t} value={t}>Tier {t}</option>)}
-          <option value="none">No Tier Assigned</option>
+          <option value="none">No Tier</option>
         </select>
-        {(search || tierFilter) && (
-          <span className="text-xs self-center" style={{ color: 'var(--color-text-muted)' }}>
-            {filtered.length} result{filtered.length !== 1 ? 's' : ''}
-          </span>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+          className="border rounded px-2 py-1.5 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+          <option value="">All Types</option>
+          {types.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={legalFilter} onChange={e => setLegalFilter(e.target.value as any)}
+          className="border rounded px-2 py-1.5 text-sm" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+          <option value="all">Legal + Illegal</option>
+          <option value="legal">Legal only</option>
+          <option value="illegal">Illegal only</option>
+        </select>
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {filtered.length} / {pokemon.length}
+        </span>
+        {(search || tierFilter || typeFilter || legalFilter !== 'all') && (
+          <button onClick={() => { setSearch(''); setTierFilter(''); setTypeFilter(''); setLegalFilter('all') }}
+            className="text-xs px-2 py-1 border rounded" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
+            Clear
+          </button>
         )}
       </div>
 
@@ -271,10 +334,23 @@ export default function PokemonTab() {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr style={{ background: 'var(--color-surface)' }}>
-                  <th className="text-left px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>Pokemon</th>
-                  <th className="text-left px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>Tier</th>
-                  <th className="text-left px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>Cost</th>
-                  <th className="text-left px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>Legal</th>
+                  {([
+                    ['dex', '#'],
+                    ['name', 'Pokemon'],
+                    [null, 'Types'],
+                    ['tier', 'Tier'],
+                    ['cost', 'Cost'],
+                    ['legal', 'Legal'],
+                  ] as [SortCol | null, string][]).map(([col, label]) => (
+                    <th
+                      key={label}
+                      className={`px-3 py-2 border-b text-left text-xs whitespace-nowrap ${col ? 'cursor-pointer select-none hover:opacity-70' : ''}`}
+                      style={{ borderColor: 'var(--color-border)' }}
+                      onClick={col ? () => handleSort(col) : undefined}
+                    >
+                      {label}{col && sortCol === col ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -283,7 +359,16 @@ export default function PokemonTab() {
                   const isDirty = Object.keys(edits[p.id] ?? {}).length > 0
                   return (
                     <tr key={p.id} style={{ background: isDirty ? '#fefce8' : 'transparent' }}>
-                      <td className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--color-border)', fontWeight: isDirty ? 600 : undefined }}>{p.species_name}</td>
+                      <td className="px-3 py-1.5 border-b text-xs tabular-nums" style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
+                        {p.pokedex_number != null ? `#${String(p.pokedex_number).padStart(3, '0')}` : '—'}
+                      </td>
+                      <td className="px-3 py-1.5 border-b whitespace-nowrap" style={{ borderColor: 'var(--color-border)', fontWeight: isDirty ? 600 : undefined }}>{p.species_name}</td>
+                      <td className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--color-border)' }}>
+                        <div className="flex gap-1">
+                          {p.species_type1 && <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: TYPE_BG[p.species_type1] ?? '#9ca3af' }}>{p.species_type1}</span>}
+                          {p.species_type2 && <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: TYPE_BG[p.species_type2] ?? '#9ca3af' }}>{p.species_type2}</span>}
+                        </div>
+                      </td>
                       <td className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--color-border)' }}>
                         <select value={edit.tier ?? p.tier ?? ''} onChange={e => setEdit(p.id, 'tier', e.target.value || null)}
                           className="border rounded px-1 py-0.5 text-xs" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
