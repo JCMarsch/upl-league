@@ -104,11 +104,14 @@ def _get_wishlist_autopick(
     season: Season,
 ) -> Optional[SeasonPokemon]:
     """Check wishlist in priority order. Return the first matching available pokemon."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     from app.models.wishlist import WishlistItem
     required_slots = season.required_slots or {}
     max_megas = required_slots.get('mega', 0)
     fulfilled = _count_fulfilled_slots(db, team.id, season_id) if max_megas > 0 else {}
     current_megas = fulfilled.get('mega', 0)
+    _log.info(f"_get_wishlist_autopick: team={team.id} required_slots={required_slots} max_megas={max_megas} fulfilled={fulfilled} current_megas={current_megas}")
 
     items = (
         db.query(WishlistItem)
@@ -124,14 +127,20 @@ def _get_wishlist_autopick(
             SeasonPokemon.drafted_by_team_id == None,
         ).options(joinedload(SeasonPokemon.species)).first()
         if not sp:
+            _log.info(f"  wishlist item sp_id={item.season_pokemon_id}: not available (drafted or not in season)")
             continue
         cost = sp.point_cost or 0
         if cost > team.points_remaining:
+            _log.info(f"  wishlist item sp_id={sp.id}: too expensive cost={cost} pts={team.points_remaining}")
             continue
-        if max_megas > 0 and _is_mega(sp) and current_megas >= max_megas:
+        is_m = _is_mega(sp)
+        _log.info(f"  wishlist item sp_id={sp.id} tier={sp.tier} is_mega={is_m} cost={cost} — mega_check: max={max_megas} current={current_megas} blocked={max_megas > 0 and is_m and current_megas >= max_megas}")
+        if max_megas > 0 and is_m and current_megas >= max_megas:
             continue
         if not _check_wishlist_conditions(db, team.id, season_id, item):
+            _log.info(f"  wishlist item sp_id={sp.id}: conditions not met")
             continue
+        _log.info(f"  wishlist item sp_id={sp.id}: SELECTED")
         return sp
     return None
 
@@ -238,6 +247,8 @@ def get_best_autopick(
 
 def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
     """Count how many of each required slot type the team already has."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     roster = (
         db.query(SeasonPokemon)
         .join(RosterPokemon, RosterPokemon.season_pokemon_id == SeasonPokemon.id)
@@ -247,10 +258,13 @@ def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
     )
     counts: dict = {}
     for sp in roster:
-        if _is_mega(sp):
+        is_m = _is_mega(sp)
+        _log.info(f"_count_fulfilled_slots: sp={sp.id} tier={sp.tier} species_id={sp.species_id} species_is_mega={sp.species.is_mega if sp.species else 'NO_SPECIES'} _is_mega={is_m}")
+        if is_m:
             counts["mega"] = counts.get("mega", 0) + 1
         elif sp.tier:
             counts[sp.tier] = counts.get(sp.tier, 0) + 1
+    _log.info(f"_count_fulfilled_slots result: team={team_id} counts={counts}")
     return counts
 
 
