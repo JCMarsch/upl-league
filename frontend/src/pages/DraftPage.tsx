@@ -392,7 +392,7 @@ export default function DraftPage() {
           <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{filtered.length} available</div>
 
           <div className="overflow-y-auto border rounded-lg" style={{ borderColor: 'var(--color-border)', maxHeight: '60vh' }}>
-            {(megaTab ? ['Mega'] : regularTiers).map(tier => {
+            {regularTiers.map(tier => {
               const tierPokemon = filtered.filter(p => p.tier === tier)
               if (tierPokemon.length === 0) return null
               return (
