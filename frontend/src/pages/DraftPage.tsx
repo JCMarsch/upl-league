@@ -52,6 +52,15 @@ const TYPE_COLORS: Record<string, string> = {
   Fairy: '#D685AD', Normal: '#A8A77A',
 }
 
+function getNextTeamId(teamIds: number[], pickNum: number): number | null {
+  if (!teamIds.length) return null
+  const n = teamIds.length
+  const idx = pickNum - 1
+  const round = Math.floor(idx / n) + 1
+  const pos = idx % n
+  return round % 2 === 1 ? teamIds[pos] : teamIds[n - 1 - pos]
+}
+
 function getTimeLeft(draftState: DraftState): number | null {
   if (!draftState.timer_seconds || !draftState.pick_started_at) return null
   const startMs = new Date(draftState.pick_started_at).getTime()
@@ -74,6 +83,7 @@ export default function DraftPage() {
   const [msg, setMsg] = useState('')
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [pendingPick, setPendingPick] = useState<SeasonPokemon | null>(null)
+  const [draftOrderTeamIds, setDraftOrderTeamIds] = useState<number[]>([])
   const wsRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -84,16 +94,23 @@ export default function DraftPage() {
 
   const canPick = draftState?.status === 'active' && (isMyTurn || isAdmin)
 
+  const nextPickNum = draftState && draftState.status === 'active' ? draftState.current_pick_number + 1 : null
+  const nextTeamId = nextPickNum && draftOrderTeamIds.length ? getNextTeamId(draftOrderTeamIds, nextPickNum) : null
+
   const fetchState = useCallback(async () => {
     if (!seasonId) return
-    const [stateRes, pokemonRes, teamsRes] = await Promise.all([
+    const [stateRes, pokemonRes, teamsRes, orderRes] = await Promise.all([
       axios.get(`/draft/${seasonId}/state`).catch(() => null),
       axios.get(`/seasons/${seasonId}/pokemon`),
       axios.get(`/seasons/${seasonId}/teams`),
+      axios.get(`/draft/${seasonId}/order`).catch(() => ({ data: [] })),
     ])
     if (stateRes) setDraftState(stateRes.data)
     setPokemon(pokemonRes.data)
     setTeams(teamsRes.data)
+    if (orderRes.data.length > 0) {
+      setDraftOrderTeamIds(orderRes.data.map((o: { team_id: number }) => o.team_id))
+    }
   }, [seasonId])
 
   useEffect(() => {
@@ -227,28 +244,21 @@ export default function DraftPage() {
 
   if (loading) return <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Loading draft...</div>
 
-  if (!draftState || draftState.status === 'pending') {
+  if (!draftState) {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold">Draft Room</h1>
         <div className="p-8 rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
-          <p className="text-lg font-semibold mb-4">Draft has not started yet.</p>
+          <p className="text-lg font-semibold mb-4">Draft has not been set up yet.</p>
           <p className="text-sm mb-4" style={{ color: 'var(--color-text-muted)' }}>Before the draft can begin, an admin must complete these steps:</p>
           <ol className="space-y-2 mb-6 text-sm" style={{ color: 'var(--color-text-muted)' }}>
             <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>1.</span> Import all Pokemon and apply a regulation preset (Admin → Pokemon table)</li>
             <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>2.</span> Assign every legal Pokemon to a tier — either via drag-and-drop or CSV upload (Admin → Tier List)</li>
             <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>3.</span> Lock tiers once assignments are complete (Admin → Pokemon table → Lock Tiers)</li>
             <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>4.</span> Ensure at least one team is registered for this season (Admin → Seasons)</li>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>5.</span> Click Start Draft below</li>
+            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>5.</span> Set the draft order (Admin → Draft Order) — this creates the draft room</li>
           </ol>
-          {isAdmin && (
-            <button onClick={startDraft} className="px-6 py-2 rounded text-white font-semibold" style={{ background: 'var(--color-primary)' }}>
-              Start Draft
-            </button>
-          )}
-          {!isAdmin && (
-            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Contact your league admin when you're ready to draft.</p>
-          )}
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Contact your league admin to get this set up.</p>
         </div>
       </div>
     )
@@ -256,6 +266,32 @@ export default function DraftPage() {
 
   return (
     <div className="space-y-4">
+      {/* Pre-start ready room banner */}
+      {draftState.status === 'pending' && (
+        <div className="flex items-center justify-between gap-4 p-4 rounded-xl border-2" style={{ borderColor: 'var(--color-primary)', background: 'var(--color-surface)' }}>
+          <div>
+            <div className="font-bold text-lg">Draft Room — Waiting to Start</div>
+            <div className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+              All managers can see this page. When everyone is ready, click START DRAFT.
+            </div>
+          </div>
+          {isAdmin && (
+            <button
+              onClick={startDraft}
+              className="px-6 py-2 rounded text-white font-bold text-sm flex-shrink-0"
+              style={{ background: 'var(--color-primary)', letterSpacing: '0.05em' }}
+            >
+              START DRAFT
+            </button>
+          )}
+          {!isAdmin && (
+            <span className="text-sm font-medium px-4 py-2 rounded" style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
+              Waiting for admin to start…
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Header bar */}
       <div className="flex items-center justify-between flex-wrap gap-3 p-4 rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
         <div>
@@ -292,7 +328,7 @@ export default function DraftPage() {
               {String(Math.floor(timeLeft / 60)).padStart(2, '0')}:{String(timeLeft % 60).padStart(2, '0')}
             </div>
           )}
-          {isAdmin && draftState.status !== 'complete' && (
+          {isAdmin && draftState.status !== 'complete' && draftState.status !== 'pending' && (
             <button onClick={pauseResume} className="px-3 py-1.5 text-sm border rounded" style={{ borderColor: 'var(--color-border)' }}>
               {draftState.status === 'active' ? 'Pause' : 'Resume'}
             </button>
@@ -469,16 +505,26 @@ export default function DraftPage() {
 
         {/* Teams panel */}
         <div className="space-y-3 overflow-y-auto" style={{ maxHeight: '70vh' }}>
-          {teams.map(team => (
+          {teams.map(team => {
+            const isCurrentPick = team.id === draftState.current_team_id && draftState.status === 'active'
+            const isNextPick = team.id === nextTeamId && team.id !== draftState.current_team_id
+            return (
             <div
               key={team.id}
-              className="border rounded-lg p-3"
+              className="border rounded-lg overflow-hidden"
               style={{
-                borderColor: team.id === draftState.current_team_id ? 'var(--color-primary)' : 'var(--color-border)',
+                borderColor: isCurrentPick ? 'var(--color-primary)' : 'var(--color-border)',
                 background: 'var(--color-surface)',
-                boxShadow: team.id === draftState.current_team_id ? '0 0 0 2px var(--color-primary)33' : 'none',
+                boxShadow: isCurrentPick ? '0 0 0 2px var(--color-primary)33' : 'none',
               }}
             >
+              {isNextPick && (
+                <div className="text-center text-xs font-black py-0.5 tracking-widest"
+                  style={{ background: '#f59e0b', color: '#1c1917' }}>
+                  NEXT PICK
+                </div>
+              )}
+              <div className="p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="font-semibold text-sm">{team.name}</div>
                 <div className="text-xs font-mono" style={{ color: 'var(--color-primary)' }}>{team.points_remaining} pts</div>
@@ -516,8 +562,10 @@ export default function DraftPage() {
                   <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No picks yet</span>
                 )}
               </div>
+              </div>
             </div>
-          ))}
+          )
+          })}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, update as sa_update, select
 from datetime import datetime, timezone
 from app.database import get_db
 from app.auth import require_admin
@@ -273,6 +273,37 @@ def get_tier_config(season_id: int, db: Session = Depends(get_db)):
     return _get_tier_config(season_id, db)
 
 
+def _apply_tier_costs_to_pokemon(season_id: int, regular: dict, mega: dict, db: Session):
+    """Sync LeagueConfig tier costs → SeasonPokemon.point_cost (single source of truth)."""
+    # IDs of mega species and non-mega species (cached once)
+    mega_species_ids = select(PokemonSpecies.id).where(PokemonSpecies.is_mega == True).scalar_subquery()
+    non_mega_species_ids = select(PokemonSpecies.id).where(PokemonSpecies.is_mega == False).scalar_subquery()
+
+    for tier, cost in regular.items():
+        if cost is not None:
+            db.execute(
+                sa_update(SeasonPokemon)
+                .where(
+                    SeasonPokemon.season_id == season_id,
+                    SeasonPokemon.tier == tier,
+                    SeasonPokemon.species_id.in_(non_mega_species_ids),
+                )
+                .values(point_cost=cost)
+            )
+
+    for tier, cost in mega.items():
+        if cost is not None:
+            db.execute(
+                sa_update(SeasonPokemon)
+                .where(
+                    SeasonPokemon.season_id == season_id,
+                    SeasonPokemon.tier == tier,
+                    SeasonPokemon.species_id.in_(mega_species_ids),
+                )
+                .values(point_cost=-cost)
+            )
+
+
 @router.post("/seasons/{season_id}/tier-config")
 def set_tier_config(
     season_id: int,
@@ -304,6 +335,9 @@ def set_tier_config(
         if tier in mega:
             upsert(f"mega_tier_cost_{tier}", mega[tier])
 
+    # Apply costs to SeasonPokemon — this is what the draft actually reads
+    _apply_tier_costs_to_pokemon(season_id, regular, mega, db)
+
     db.commit()
     return _get_tier_config(season_id, db)
 
@@ -331,6 +365,15 @@ def lock_tiers(
             status_code=400,
             detail=f"{missing} legal Pokemon are missing tier assignments",
         )
+
+    # Apply current tier costs to all pokemon before locking
+    config = _get_tier_config(season_id, db)
+    _apply_tier_costs_to_pokemon(
+        season_id,
+        {k: v for k, v in config["regular"].items() if v is not None},
+        {k: v for k, v in config["mega"].items() if v is not None},
+        db,
+    )
 
     now = datetime.now(timezone.utc)
     db.query(SeasonPokemon).filter(SeasonPokemon.season_id == season_id).update(

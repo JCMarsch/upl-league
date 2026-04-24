@@ -93,7 +93,7 @@ def create_team(
 
 @router.get("/{season_id}/teams", response_model=List[TeamOut])
 def list_teams(season_id: int, db: Session = Depends(get_db)):
-    return db.query(Team).filter(Team.season_id == season_id).all()
+    return db.query(Team).filter(Team.season_id == season_id).order_by(Team.id).all()
 
 
 # ---------------------------------------------------------------------------
