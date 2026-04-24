@@ -246,7 +246,10 @@ def _can_complete(
     roster_size: int = 10,
 ) -> bool:
     unfilled = set(_REQUIRED_TIERS) - required_filled
-    needed = list(unfilled) + ([] if mega_filled else ['mega'])
+    # Mega goes first: it's a refund (negative cost), so evaluating it first avoids
+    # false-negative budget failures when expensive required tiers are checked before
+    # the mega's budget boost is applied.
+    needed = ([] if mega_filled else ['mega']) + sorted(unfilled)
 
     if picks_remaining < len(needed):
         return False
@@ -275,6 +278,8 @@ def _can_complete(
             [p for p in available if p.id not in used_ids and (p.point_cost or 0) >= 0],
             key=lambda p: p.point_cost or 0
         )
+        if len(free_cands) < free_picks:
+            return False
         for p in free_cands[:free_picks]:
             c = p.point_cost or 0
             if total_min_cost + c > budget:
