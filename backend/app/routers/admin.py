@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy import update as sa_update
+from sqlalchemy import update as sa_update, text
 import logging
 import json as _json
 
@@ -143,21 +143,35 @@ def admin_update_season(
     update_data = data.model_dump(exclude_none=True)
     logger.info(f"admin_update_season: season_id={season_id} fields={list(update_data.keys())}")
 
-    # required_slots is a JSON column — bypass ORM tracking with a direct SQL UPDATE
-    if 'required_slots' in update_data:
-        slots = update_data.pop('required_slots')
-        db.execute(
-            sa_update(Season).where(Season.id == season_id).values(required_slots=slots)
-        )
-        logger.info(f"admin_update_season: direct SQL update required_slots={slots}")
-
     for field, value in update_data.items():
         setattr(season, field, value)
+        if field == 'required_slots':
+            flag_modified(season, 'required_slots')
 
     db.commit()
     db.refresh(season)
     logger.info(f"admin_update_season: after commit required_slots={season.required_slots}")
     return {"id": season.id, "name": season.name, "status": season.status, "required_slots": season.required_slots}
+
+
+@router.put("/seasons/{season_id}/required-slots")
+async def set_required_slots(
+    season_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Dedicated endpoint to save required_slots — bypasses ORM JSON tracking."""
+    slots = await request.json()
+    logger.info(f"set_required_slots: season_id={season_id} slots={slots}")
+    db.execute(
+        text("UPDATE seasons SET required_slots = :slots WHERE id = :id"),
+        {"slots": _json.dumps(slots), "id": season_id}
+    )
+    db.commit()
+    season = db.query(Season).filter(Season.id == season_id).first()
+    logger.info(f"set_required_slots: confirmed required_slots={season.required_slots}")
+    return {"required_slots": season.required_slots}
 
 
 # ── Teams ─────────────────────────────────────────────────────────────────────
