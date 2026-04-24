@@ -40,7 +40,7 @@ function Layout({ children, wide = false }: { children: React.ReactNode; wide?: 
   return (
     <div style={{ background: 'var(--color-bg)', minHeight: '100vh', color: 'var(--color-text)' }}>
       <NavBar />
-      <main className={`${wide ? 'w-full' : 'max-w-7xl mx-auto'} px-4 py-6`}>
+      <main className={`${wide ? 'w-full px-3' : 'max-w-[1600px] mx-auto px-4'} py-4`}>
         {children}
       </main>
     </div>
