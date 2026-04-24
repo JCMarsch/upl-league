@@ -26,12 +26,12 @@ function defaultSlots(): SlotMap {
 function slotsFromSeason(s: Season): SlotMap {
   const rs = s.required_slots || {}
   return {
-    mega: rs.mega ?? 1,
-    S: rs.S ?? 1,
-    A: rs.A ?? 1,
-    B: rs.B ?? 1,
-    C: rs.C ?? 1,
-    D: rs.D ?? 1,
+    mega: rs.mega ?? 0,
+    S: rs.S ?? 0,
+    A: rs.A ?? 0,
+    B: rs.B ?? 0,
+    C: rs.C ?? 0,
+    D: rs.D ?? 0,
   }
 }
 

@@ -1,5 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
+import logging
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from pydantic import BaseModel
@@ -134,10 +138,16 @@ def admin_update_season(
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
-    for field, value in data.model_dump(exclude_none=True).items():
+    update_data = data.model_dump(exclude_none=True)
+    logger.info(f"admin_update_season: season_id={season_id} fields={list(update_data.keys())}")
+    for field, value in update_data.items():
         setattr(season, field, value)
+        # JSON columns need explicit dirty-flag so SQLAlchemy doesn't skip the write
+        if field == 'required_slots':
+            flag_modified(season, 'required_slots')
     db.commit()
-    return {"id": season.id, "name": season.name, "status": season.status}
+    logger.info(f"admin_update_season: saved required_slots={season.required_slots}")
+    return {"id": season.id, "name": season.name, "status": season.status, "required_slots": season.required_slots}
 
 
 # ── Teams ─────────────────────────────────────────────────────────────────────
