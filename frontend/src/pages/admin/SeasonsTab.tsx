@@ -98,7 +98,10 @@ export default function SeasonsTab() {
 
   const saveEdit = async (id: number) => {
     try {
-      await axios.patch(`/admin/seasons/${id}`, { ...editForm, required_slots: editSlots }, { withCredentials: true })
+      if (Object.keys(editForm).length > 0) {
+        await axios.patch(`/admin/seasons/${id}`, editForm, { withCredentials: true })
+      }
+      await axios.put(`/admin/seasons/${id}/required-slots`, editSlots, { withCredentials: true })
       setEditingId(null)
       load()
     } catch (e: any) {
