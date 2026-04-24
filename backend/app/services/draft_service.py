@@ -1,10 +1,18 @@
 """Draft state machine service."""
-from typing import List, Optional
+from typing import List, Optional, Set
 from sqlalchemy.orm import Session, joinedload
 from app.models.draft import Draft, DraftOrder, DraftPick
 from app.models.team import Team
 from app.models.pokemon import SeasonPokemon, RosterPokemon
 from app.models.season import Season
+
+import logging as _logging
+_log = _logging.getLogger(__name__)
+
+# Structural slot definitions — fixed for UPL rules.
+# 1 Mega + 5 tier picks (S/A/B/C/D) + 4 free picks = 10 total.
+_REQUIRED_TIERS = ['S', 'A', 'B', 'C', 'D']
+_FREE_SLOTS = 4
 
 
 def _is_mega(sp: SeasonPokemon) -> bool:
@@ -60,13 +68,61 @@ def get_highest_tier_available(db: Session, season_id: int) -> Optional[SeasonPo
     ).first()
 
 
-def _check_wishlist_conditions(
-    db: Session,
-    team_id: int,
-    season_id: int,
-    item,  # WishlistItem
-) -> bool:
-    """Return True if the wishlist item's conditions are met."""
+# ---------------------------------------------------------------------------
+# Roster state helpers
+# ---------------------------------------------------------------------------
+
+def _load_roster(db: Session, team_id: int, season_id: int) -> List[SeasonPokemon]:
+    """Return current drafted SeasonPokemon for this team, with species loaded."""
+    return (
+        db.query(SeasonPokemon)
+        .join(RosterPokemon, RosterPokemon.season_pokemon_id == SeasonPokemon.id)
+        .filter(RosterPokemon.team_id == team_id, SeasonPokemon.season_id == season_id)
+        .options(joinedload(SeasonPokemon.species))
+        .all()
+    )
+
+
+def _roster_state(roster: List[SeasonPokemon]):
+    """
+    Compute slot assignment for a roster list.
+    Returns:
+        mega_filled: bool
+        required_filled: set of tier strings already occupying their required slot
+        free_used: number of free-slot picks used
+    """
+    mega_filled = False
+    required_filled: Set[str] = set()
+    free_used = 0
+
+    for sp in roster:
+        if _is_mega(sp):
+            # Only the first mega fills the mega slot; a 2nd would also count as free
+            # but should never happen — we prevent it at pick time.
+            mega_filled = True
+        elif sp.tier in _REQUIRED_TIERS and sp.tier not in required_filled:
+            required_filled.add(sp.tier)
+        else:
+            free_used += 1
+
+    return mega_filled, required_filled, free_used
+
+
+def _slots_summary(team_id, season_id, db):
+    roster = _load_roster(db, team_id, season_id)
+    mega_filled, required_filled, free_used = _roster_state(roster)
+    _log.info(
+        f"slots team={team_id}: mega={'Y' if mega_filled else 'N'} "
+        f"required={sorted(required_filled)} free_used={free_used}/{_FREE_SLOTS}"
+    )
+    return mega_filled, required_filled, free_used
+
+
+# ---------------------------------------------------------------------------
+# Wishlist autopick
+# ---------------------------------------------------------------------------
+
+def _check_wishlist_conditions(db: Session, team_id: int, season_id: int, item) -> bool:
     from app.models.pokemon import RosterPokemon as RP
     conditions = item.conditions or []
     if not conditions:
@@ -102,16 +158,14 @@ def _get_wishlist_autopick(
     season_id: int,
     team: Team,
     season: Season,
+    mega_filled: bool,
+    required_filled: Set[str],
+    free_used: int,
+    total_picks: int,
 ) -> Optional[SeasonPokemon]:
-    """Check wishlist in priority order. Return the first matching available pokemon."""
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
     from app.models.wishlist import WishlistItem
-    required_slots = season.required_slots or {}
-    max_megas = required_slots.get('mega', 0)
-    fulfilled = _count_fulfilled_slots(db, team.id, season_id) if max_megas > 0 else {}
-    current_megas = fulfilled.get('mega', 0)
-    _log.info(f"_get_wishlist_autopick: team={team.id} required_slots={required_slots} max_megas={max_megas} fulfilled={fulfilled} current_megas={current_megas}")
+    roster_size = season.roster_size or 10
+    picks_left = roster_size - total_picks  # includes current pick
 
     items = (
         db.query(WishlistItem)
@@ -127,23 +181,71 @@ def _get_wishlist_autopick(
             SeasonPokemon.drafted_by_team_id == None,
         ).options(joinedload(SeasonPokemon.species)).first()
         if not sp:
-            _log.info(f"  wishlist item sp_id={item.season_pokemon_id}: not available (drafted or not in season)")
+            continue
+        if not _pick_is_legal(sp, mega_filled, required_filled, free_used, picks_left, roster_size):
+            _log.info(f"  wishlist sp={sp.id} blocked by slot rules")
             continue
         cost = sp.point_cost or 0
         if cost > team.points_remaining:
-            _log.info(f"  wishlist item sp_id={sp.id}: too expensive cost={cost} pts={team.points_remaining}")
-            continue
-        is_m = _is_mega(sp)
-        _log.info(f"  wishlist item sp_id={sp.id} tier={sp.tier} is_mega={is_m} cost={cost} — mega_check: max={max_megas} current={current_megas} blocked={max_megas > 0 and is_m and current_megas >= max_megas}")
-        if max_megas > 0 and is_m and current_megas >= max_megas:
+            _log.info(f"  wishlist sp={sp.id} too expensive cost={cost}")
             continue
         if not _check_wishlist_conditions(db, team.id, season_id, item):
-            _log.info(f"  wishlist item sp_id={sp.id}: conditions not met")
+            _log.info(f"  wishlist sp={sp.id} conditions not met")
             continue
-        _log.info(f"  wishlist item sp_id={sp.id}: SELECTED")
+        _log.info(f"  wishlist sp={sp.id} tier={sp.tier} is_mega={_is_mega(sp)} SELECTED")
         return sp
     return None
 
+
+# ---------------------------------------------------------------------------
+# Pick legality check (structural, independent of config)
+# ---------------------------------------------------------------------------
+
+def _pick_is_legal(
+    sp: SeasonPokemon,
+    mega_filled: bool,
+    required_filled: Set[str],
+    free_used: int,
+    picks_left: int,  # including this pick
+    roster_size: int = 10,
+) -> bool:
+    """
+    Return True if picking sp is structurally legal given current roster state.
+    - Exactly 1 mega slot. A 2nd mega is never legal.
+    - S/A/B/C/D: fills required slot if unfilled, else goes to free slot.
+    - Free-tier always goes to free slot.
+    - Can't use more free slots than available (_FREE_SLOTS).
+    - Must keep enough picks to fill unfilled required slots.
+    """
+    if _is_mega(sp):
+        return not mega_filled  # Hard stop: only 1 mega allowed
+
+    unfilled_required = set(_REQUIRED_TIERS) - required_filled
+    # How many required slots remain after this pick?
+    tier = sp.tier
+    fills_required_slot = (tier in unfilled_required)
+
+    if fills_required_slot:
+        unfilled_after = unfilled_required - {tier}
+    else:
+        unfilled_after = unfilled_required
+        # This pick goes to a free slot
+        free_after = free_used + 1
+        if free_after > _FREE_SLOTS:
+            return False  # No free slots left
+        # Check we still have enough picks left to fill remaining required slots
+        # picks_left - 1 (this pick) must be >= unfilled_after + (0 or 1 for mega)
+        remaining_picks = picks_left - 1
+        needs = len(unfilled_after) + (0 if mega_filled else 1)
+        if remaining_picks < needs:
+            return False  # Can't fill required slots
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Best autopick
+# ---------------------------------------------------------------------------
 
 def get_best_autopick(
     db: Session,
@@ -152,17 +254,33 @@ def get_best_autopick(
     season: Season,
 ) -> Optional[SeasonPokemon]:
     """
-    Pick the highest tier pokemon that:
-    1. Fits within safe_budget (points_remaining - minimum cost to fill N-1 remaining picks)
-    2. Still allows fulfilling required_slots with the remaining roster spots
-
-    Does NOT prioritize required slots first — picks highest value that keeps options open.
+    Pick the highest-value pokemon that:
+    1. Is structurally legal (slot rules)
+    2. Fits within budget
+    3. Still allows completing required slots within remaining budget
     """
-    # Wishlist takes priority
-    wishlist_pick = _get_wishlist_autopick(db, season_id, team, season)
+    roster = _load_roster(db, team.id, season_id)
+    mega_filled, required_filled, free_used = _roster_state(roster)
+    roster_size = season.roster_size or 10
+    total_picks = len(roster)
+    picks_left = roster_size - total_picks  # includes current pick
+
+    _log.info(
+        f"get_best_autopick team={team.id} pts={team.points_remaining} picks_left={picks_left} "
+        f"mega={'Y' if mega_filled else 'N'} required={sorted(required_filled)} free_used={free_used}"
+    )
+
+    if picks_left <= 0:
+        return None
+
+    # Try wishlist first
+    wishlist_pick = _get_wishlist_autopick(
+        db, season_id, team, season, mega_filled, required_filled, free_used, total_picks
+    )
     if wishlist_pick:
         return wishlist_pick
 
+    # Load all available pokemon with species
     available = (
         db.query(SeasonPokemon)
         .filter(
@@ -176,173 +294,110 @@ def get_best_autopick(
     if not available:
         return None
 
-    # How many picks does this team have left (including this one)?
-    roster_count = (
-        db.query(RosterPokemon)
-        .filter(RosterPokemon.team_id == team.id)
-        .count()
-    )
-    picks_left = season.roster_size - roster_count  # includes current pick
-    if picks_left <= 0:
-        return None
+    tier_rank = {"Mega": 0, "S": 1, "A": 2, "B": 3, "C": 4, "D": 5, "Free": 6}
 
-    # Required slots still unfulfilled
-    required_slots = season.required_slots or {}
-    fulfilled = _count_fulfilled_slots(db, team.id, season_id)
-    remaining_required = {
-        slot: max(0, count - fulfilled.get(slot, 0))
-        for slot, count in required_slots.items()
-    }
-    max_megas = required_slots.get('mega', 0)
-    current_megas = fulfilled.get('mega', 0)
-
-    # Sort available by cost ascending for safe_budget calculation
-    available_sorted_by_cost = sorted(available, key=lambda p: p.point_cost or 0)
-
-    tier_order = ["Mega", "S", "A", "B", "C", "D", "Free"]
-    tier_rank = {t: i for i, t in enumerate(tier_order)}
-
-    # Sort all available by tier desc, then by cost desc within tier
+    # Sort candidates: megas first (tier_rank 0), then by tier, then by cost desc
     candidates = sorted(
         available,
-        key=lambda p: (tier_rank.get(p.tier or "Free", 99), -(p.point_cost or 0))
+        key=lambda p: (tier_rank.get(p.tier or "Free", 6) if not _is_mega(p) else 0, -(p.point_cost or 0))
     )
 
     for candidate in candidates:
         cost = candidate.point_cost or 0
         if cost > team.points_remaining:
             continue
-        if max_megas > 0 and _is_mega(candidate) and current_megas >= max_megas:
+
+        if not _pick_is_legal(candidate, mega_filled, required_filled, free_used, picks_left, roster_size):
             continue
 
-        remaining_after_pick = team.points_remaining - cost
-        picks_after = picks_left - 1
+        remaining_pts = team.points_remaining - cost
+        remaining_picks = picks_left - 1
 
-        if picks_after == 0:
-            # Last pick — just check it fits budget
-            if cost <= team.points_remaining and _can_fulfill_required(candidate, remaining_required, {}):
-                return candidate
-            continue
+        if remaining_picks == 0:
+            return candidate  # Last pick, already passed legality check
 
-        # Safe budget: need to keep enough for the N-1 cheapest remaining picks
-        # But those cheapest picks must also satisfy remaining required slots
+        # Compute what slots will still be unfilled after this pick
+        if _is_mega(candidate):
+            mega_after = True
+            req_after = required_filled
+        elif candidate.tier in _REQUIRED_TIERS and candidate.tier not in required_filled:
+            mega_after = mega_filled
+            req_after = required_filled | {candidate.tier}
+        else:
+            mega_after = mega_filled
+            req_after = required_filled
+
+        # Check we can still afford remaining required slots
         others = [p for p in available if p.id != candidate.id]
-
-        # Check if we can still fulfill required slots with picks_after picks
-        new_required = _update_required_after_pick(candidate, remaining_required)
-        if not _feasible(others, new_required, picks_after, remaining_after_pick):
+        if not _can_complete(others, mega_after, req_after, remaining_picks, remaining_pts):
             continue
 
         return candidate
 
-    # Fallback: cheapest available that fits budget
-    for p in available_sorted_by_cost:
+    # Fallback: cheapest legal pick within budget
+    cheapest = sorted(available, key=lambda p: p.point_cost or 0)
+    for p in cheapest:
         if (p.point_cost or 0) <= team.points_remaining:
-            if max_megas > 0 and _is_mega(p) and current_megas >= max_megas:
-                continue
-            return p
+            if _pick_is_legal(p, mega_filled, required_filled, free_used, picks_left, roster_size):
+                return p
 
     return None
 
 
-def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
-    """Count how many of each required slot type the team already has."""
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
-    roster = (
-        db.query(SeasonPokemon)
-        .join(RosterPokemon, RosterPokemon.season_pokemon_id == SeasonPokemon.id)
-        .filter(RosterPokemon.team_id == team_id, SeasonPokemon.season_id == season_id)
-        .options(joinedload(SeasonPokemon.species))
-        .all()
-    )
-    counts: dict = {}
-    for sp in roster:
-        is_m = _is_mega(sp)
-        _log.info(f"_count_fulfilled_slots: sp={sp.id} tier={sp.tier} species_id={sp.species_id} species_is_mega={sp.species.is_mega if sp.species else 'NO_SPECIES'} _is_mega={is_m}")
-        if is_m:
-            counts["mega"] = counts.get("mega", 0) + 1
-        elif sp.tier:
-            counts[sp.tier] = counts.get(sp.tier, 0) + 1
-    _log.info(f"_count_fulfilled_slots result: team={team_id} counts={counts}")
-    return counts
-
-
-def _update_required_after_pick(candidate: SeasonPokemon, remaining_required: dict) -> dict:
-    """Return updated remaining_required after picking candidate."""
-    new_req = dict(remaining_required)
-    if _is_mega(candidate):
-        if new_req.get("mega", 0) > 0:
-            new_req["mega"] = new_req["mega"] - 1
-    elif candidate.tier and new_req.get(candidate.tier, 0) > 0:
-        new_req[candidate.tier] = new_req[candidate.tier] - 1
-    return {k: v for k, v in new_req.items() if v > 0}
-
-
-def _can_fulfill_required(candidate: SeasonPokemon, remaining_required: dict, _unused) -> bool:
-    """Check if picking candidate satisfies or moves toward required slots."""
-    return True  # We check feasibility separately
-
-
-def _feasible(
+def _can_complete(
     available: List[SeasonPokemon],
-    remaining_required: dict,
-    picks_left: int,
+    mega_filled: bool,
+    required_filled: Set[str],
+    picks_remaining: int,
     budget: int,
 ) -> bool:
     """
-    Check if remaining_required can be fulfilled with picks_left picks and budget.
-    Also checks that cheapest picks_left pokemon can be afforded.
+    Check if the remaining required slots can be filled with picks_remaining picks
+    and the given budget.
     """
-    if not remaining_required:
-        # No required slots — just check budget for cheapest picks
-        cheapest = sorted(available, key=lambda p: p.point_cost or 0)[:picks_left]
-        return sum(p.point_cost or 0 for p in cheapest) <= budget
+    unfilled = set(_REQUIRED_TIERS) - required_filled
+    needed = list(unfilled) + ([] if mega_filled else ['mega'])
 
-    # Check each required slot type has enough candidates available
-    for slot, count in remaining_required.items():
-        slot_candidates = _candidates_for_slot(available, slot)
-        if len(slot_candidates) < count:
+    if picks_remaining < len(needed):
+        return False  # Not enough picks to fill required slots
+
+    total_min_cost = 0
+    used_ids: set = set()
+
+    # For each required slot, find cheapest available pokemon that can fill it
+    for slot in needed:
+        if slot == 'mega':
+            candidates = [p for p in available if _is_mega(p) and p.id not in used_ids]
+        else:
+            candidates = [p for p in available if not _is_mega(p) and p.tier == slot and p.id not in used_ids]
+        if not candidates:
+            return False  # No pokemon available for this required slot
+        cheapest = min(candidates, key=lambda p: p.point_cost or 0)
+        cost = cheapest.point_cost or 0
+        if total_min_cost + cost > budget:
             return False
+        total_min_cost += cost
+        used_ids.add(cheapest.id)
 
-    # Greedy check: can we pick picks_left pokemon satisfying required slots within budget?
-    # Sort required slots by scarcity (fewest candidates first)
-    slot_items = sorted(remaining_required.items(), key=lambda kv: len(_candidates_for_slot(available, kv[0])))
-
-    budget_remaining = budget
-    picks_remaining = picks_left
-    picked_ids = set()
-
-    for slot, count in slot_items:
-        slot_cands = [p for p in _candidates_for_slot(available, slot) if p.id not in picked_ids]
-        cheapest_for_slot = sorted(slot_cands, key=lambda p: p.point_cost or 0)[:count]
-        if len(cheapest_for_slot) < count:
-            return False
-        for p in cheapest_for_slot:
-            cost = p.point_cost or 0
-            if cost > budget_remaining:
-                return False
-            budget_remaining -= cost
-            picks_remaining -= 1
-            picked_ids.add(p.id)
-
-    # Fill remaining free picks with cheapest available
-    free_cands = sorted([p for p in available if p.id not in picked_ids], key=lambda p: p.point_cost or 0)
-    for p in free_cands[:picks_remaining]:
-        cost = p.point_cost or 0
-        if cost > budget_remaining:
-            return False
-        budget_remaining -= cost
+    # Remaining free picks: check we can afford the cheapest available
+    free_picks = picks_remaining - len(needed)
+    if free_picks > 0:
+        free_candidates = sorted(
+            [p for p in available if p.id not in used_ids and (p.point_cost or 0) >= 0],
+            key=lambda p: p.point_cost or 0
+        )
+        for p in free_candidates[:free_picks]:
+            c = p.point_cost or 0
+            if total_min_cost + c > budget:
+                return False  # Can't afford even the cheapest free picks
+            total_min_cost += c
 
     return True
 
 
-def _candidates_for_slot(available: List[SeasonPokemon], slot: str) -> List[SeasonPokemon]:
-    """Return available pokemon that satisfy the given required slot."""
-    if slot == "mega":
-        return [p for p in available if _is_mega(p)]
-    return [p for p in available if p.tier == slot and not _is_mega(p)]
-
+# ---------------------------------------------------------------------------
+# make_pick
+# ---------------------------------------------------------------------------
 
 def make_pick(
     db: Session,
@@ -353,20 +408,36 @@ def make_pick(
     team_ids: List[int],
 ) -> DraftPick:
     """Record a draft pick and advance state."""
+    from app.models.pokemon import PokemonSpecies
+    from datetime import datetime, timezone
+
     num_teams = len(team_ids)
     pick_num = draft.current_pick_number
     round_num = (pick_num - 1) // num_teams + 1
 
-    # Record pick
-    from datetime import datetime, timezone
+    sp = db.query(SeasonPokemon).options(joinedload(SeasonPokemon.species)).filter(
+        SeasonPokemon.id == season_pokemon_id
+    ).first()
+
+    # Hard-coded mega cap: load roster and validate structural legality
+    roster = _load_roster(db, team_id, season.id)
+    mega_filled, required_filled, free_used = _roster_state(roster)
+    roster_size = season.roster_size or 10
+    picks_left = roster_size - len(roster)  # includes this pick
+
+    if not _pick_is_legal(sp, mega_filled, required_filled, free_used, picks_left, roster_size):
+        if _is_mega(sp) and mega_filled:
+            raise ValueError("Mega slot already filled (max 1 mega per team)")
+        raise ValueError("Pick violates slot rules (no free slots remaining or required slots can't be completed)")
+
+    # Record pick timing
     now = datetime.now(timezone.utc)
     time_taken = None
     if draft.pick_started_at:
         started = draft.pick_started_at
         if started.tzinfo is None:
             started = started.replace(tzinfo=timezone.utc)
-        delta = (now - started).total_seconds()
-        time_taken = max(0, round(delta))
+        time_taken = max(0, round((now - started).total_seconds()))
 
     pick = DraftPick(
         draft_id=draft.id,
@@ -378,26 +449,20 @@ def make_pick(
     )
     db.add(pick)
 
-    # Mark pokemon as drafted
-    sp = db.query(SeasonPokemon).filter(SeasonPokemon.id == season_pokemon_id).first()
     sp.drafted_by_team_id = team_id
     sp.draft_pick_number = pick_num
     sp.acquired_via = "draft"
 
-    # Deduct points
     team = db.query(Team).filter(Team.id == team_id).first()
     team.points_remaining -= sp.point_cost or 0
 
-    # Add to roster in the same transaction
     from app.models.pokemon import RosterPokemon as _RP
     db.add(_RP(team_id=team_id, season_pokemon_id=season_pokemon_id))
 
-    # Advance pick number
     draft.current_pick_number = pick_num + 1
 
-    # Set next team and timer
     next_pick = pick_num + 1
-    total_picks = num_teams * season.roster_size
+    total_picks = num_teams * (season.roster_size or 10)
     if next_pick <= total_picks:
         draft.current_team_id = get_next_team_snake(draft, team_ids, next_pick, num_teams)
         draft.pick_started_at = datetime.now(timezone.utc)
@@ -410,3 +475,18 @@ def make_pick(
     db.refresh(pick)
     db.refresh(team)
     return pick
+
+
+# ---------------------------------------------------------------------------
+# Legacy helpers kept for compatibility
+# ---------------------------------------------------------------------------
+
+def _count_fulfilled_slots(db: Session, team_id: int, season_id: int) -> dict:
+    roster = _load_roster(db, team_id, season_id)
+    mega_filled, required_filled, _ = _roster_state(roster)
+    counts = {}
+    if mega_filled:
+        counts['mega'] = 1
+    for t in required_filled:
+        counts[t] = 1
+    return counts

@@ -78,16 +78,28 @@ def _do_autopick(season_id: int, expected_pick_number: int):
         logger.info(f"Autopick: get_best_autopick returned {sp.id if sp else None}")
 
         if not sp:
-            # Final fallback: any legal undrafted pokemon that fits the budget
-            sp = (
+            # Final fallback: cheapest structurally-valid pokemon within budget
+            from app.services.draft_service import _load_roster, _roster_state, _pick_is_legal
+            from sqlalchemy.orm import joinedload
+            roster = _load_roster(db, team.id, season_id)
+            mega_filled, required_filled, free_used = _roster_state(roster)
+            roster_size = season.roster_size or 10
+            picks_left = roster_size - len(roster)
+            candidates = (
                 db.query(SeasonPokemon)
+                .options(joinedload(SeasonPokemon.species))
                 .filter(
                     SeasonPokemon.season_id == season_id,
                     SeasonPokemon.is_legal == True,
                     SeasonPokemon.drafted_by_team_id == None,
                     SeasonPokemon.point_cost <= team.points_remaining,
                 )
-                .first()
+                .all()
+            )
+            sp = next(
+                (c for c in sorted(candidates, key=lambda p: p.point_cost or 0)
+                 if _pick_is_legal(c, mega_filled, required_filled, free_used, picks_left, roster_size)),
+                None
             )
         if not sp:
             logger.warning(f"Autopick: no affordable pokemon for season {season_id} pick {expected_pick_number} — ending draft")

@@ -228,6 +228,29 @@ export default function DraftPage() {
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Reset failed') }
   }
 
+  // Compute structural slot assignments for a team's drafted pokemon
+  const SLOT_ORDER = ['Mega', 'S', 'A', 'B', 'C', 'D'] as const
+  const FREE_SLOTS = 4
+
+  function assignSlots(teamId: number) {
+    const drafted = pokemon.filter(p => p.drafted_by_team_id === teamId)
+    const slots: Record<string, SeasonPokemon | null> = { Mega: null, S: null, A: null, B: null, C: null, D: null }
+    const free: (SeasonPokemon | null)[] = [null, null, null, null]
+    for (const p of drafted) {
+      if (p.is_mega) {
+        if (!slots.Mega) { slots.Mega = p; continue }
+      }
+      const tier = p.tier ?? ''
+      if ((tier === 'S' || tier === 'A' || tier === 'B' || tier === 'C' || tier === 'D') && !slots[tier]) {
+        slots[tier] = p
+      } else {
+        const emptyFree = free.findIndex(f => f === null)
+        if (emptyFree >= 0) free[emptyFree] = p
+      }
+    }
+    return { slots, free }
+  }
+
   const available = pokemon.filter(p => p.is_legal && !p.drafted_by_team_id)
   const tabAvailable = megaTab
     ? available.filter(p => p.is_mega)
@@ -240,7 +263,6 @@ export default function DraftPage() {
   })
 
   const teamName = (id: number | null) => id ? (teams.find(t => t.id === id)?.name ?? `Team ${id}`) : '—'
-  const teamPokemon = (teamId: number) => pokemon.filter(p => p.drafted_by_team_id === teamId)
 
   if (loading) return <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Loading draft...</div>
 
@@ -529,38 +551,91 @@ export default function DraftPage() {
                 <div className="font-semibold text-sm">{team.name}</div>
                 <div className="text-xs font-mono" style={{ color: 'var(--color-primary)' }}>{team.points_remaining} pts</div>
               </div>
-              <div className="flex flex-wrap gap-1">
-                {teamPokemon(team.id).map(p => {
-                  const pickNum = picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number
-                  const isMega = Boolean(p.is_mega)
-                  const tierLabel = isMega ? `M-${p.tier ?? '?'}` : (p.tier ?? '?')
-                  const tColor = isMega
-                    ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed')
-                    : (TIER_COLORS[p.tier ?? '']?.label ?? '#9ca3af')
-                  return (
-                    <div
-                      key={p.id}
-                      className="relative"
-                      style={{ width: 40, height: 44 }}
-                      title={`#${pickNum ?? '?'} ${p.species_name} · ${isMega ? 'Mega-' : ''}${p.tier ?? 'N/A'} · ${p.point_cost ?? '?'}pts`}
-                    >
-                      <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-10 h-8 object-contain" />
-                      {pickNum !== undefined && (
-                        <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
-                          style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>
-                          {pickNum}
-                        </span>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
-                        style={{ background: tColor, color: '#fff', lineHeight: '10px' }}>
-                        {tierLabel}
-                      </div>
-                    </div>
-                  )
-                })}
-                {teamPokemon(team.id).length === 0 && (
-                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>No picks yet</span>
-                )}
+              {/* Structured slots — mirrors the Excel layout */}
+              <div className="space-y-1">
+                {/* Required slots row */}
+                <div className="flex gap-1">
+                  {(() => {
+                    const { slots, free } = assignSlots(team.id)
+                    return (
+                      <>
+                        {SLOT_ORDER.map(slotKey => {
+                          const p = slots[slotKey]
+                          const isMegaSlot = slotKey === 'Mega'
+                          const slotColor = isMegaSlot
+                            ? (p ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed') : '#7c3aed')
+                            : (TIER_COLORS[slotKey]?.label ?? '#9ca3af')
+                          const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
+                          return (
+                            <div key={slotKey} className="relative flex-shrink-0"
+                              style={{ width: 38, height: 46 }}
+                              title={p ? `#${pickNum ?? '?'} ${p.species_name} · ${p.point_cost ?? '?'}pts` : `${slotKey} slot — empty`}>
+                              <div className="absolute inset-0 rounded border"
+                                style={{
+                                  borderColor: slotColor,
+                                  background: p ? 'transparent' : 'color-mix(in srgb, var(--color-bg) 80%, transparent)',
+                                  opacity: p ? 1 : 0.6,
+                                }} />
+                              {p ? (
+                                <>
+                                  <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" />
+                                  {pickNum !== undefined && (
+                                    <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
+                                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>{pickNum}</span>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center justify-center h-8">
+                                  <span className="text-[8px]" style={{ color: slotColor, opacity: 0.7 }}>—</span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
+                                style={{ background: slotColor, color: '#fff', lineHeight: '11px' }}>
+                                {slotKey}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* Free slots */}
+                        {free.map((p, i) => {
+                          const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
+                          const tColor = p
+                            ? (p.is_mega ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed') : (TIER_COLORS[p.tier ?? '']?.label ?? '#9ca3af'))
+                            : '#9ca3af'
+                          return (
+                            <div key={`free-${i}`} className="relative flex-shrink-0"
+                              style={{ width: 38, height: 46 }}
+                              title={p ? `#${pickNum ?? '?'} ${p.species_name} (free pick) · ${p.point_cost ?? '?'}pts` : 'Free slot — empty'}>
+                              <div className="absolute inset-0 rounded border"
+                                style={{
+                                  borderColor: p ? tColor : 'var(--color-border)',
+                                  background: p ? 'transparent' : 'color-mix(in srgb, var(--color-bg) 80%, transparent)',
+                                  opacity: p ? 1 : 0.5,
+                                }} />
+                              {p ? (
+                                <>
+                                  <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" />
+                                  {pickNum !== undefined && (
+                                    <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
+                                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>{pickNum}</span>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex items-center justify-center h-8">
+                                  <span className="text-[8px]" style={{ color: 'var(--color-text-muted)', opacity: 0.5 }}>—</span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
+                                style={{ background: p ? tColor : 'var(--color-border)', color: '#fff', lineHeight: '11px' }}>
+                                {p ? (p.tier ?? '?') : 'FREE'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </>
+                    )
+                  })()}
+                </div>
               </div>
               </div>
             </div>
