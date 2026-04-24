@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy import update as sa_update
 import logging
+import json as _json
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone, timedelta
@@ -140,13 +142,21 @@ def admin_update_season(
         raise HTTPException(status_code=404, detail="Season not found")
     update_data = data.model_dump(exclude_none=True)
     logger.info(f"admin_update_season: season_id={season_id} fields={list(update_data.keys())}")
+
+    # required_slots is a JSON column — bypass ORM tracking with a direct SQL UPDATE
+    if 'required_slots' in update_data:
+        slots = update_data.pop('required_slots')
+        db.execute(
+            sa_update(Season).where(Season.id == season_id).values(required_slots=slots)
+        )
+        logger.info(f"admin_update_season: direct SQL update required_slots={slots}")
+
     for field, value in update_data.items():
         setattr(season, field, value)
-        # JSON columns need explicit dirty-flag so SQLAlchemy doesn't skip the write
-        if field == 'required_slots':
-            flag_modified(season, 'required_slots')
+
     db.commit()
-    logger.info(f"admin_update_season: saved required_slots={season.required_slots}")
+    db.refresh(season)
+    logger.info(f"admin_update_season: after commit required_slots={season.required_slots}")
     return {"id": season.id, "name": season.name, "status": season.status, "required_slots": season.required_slots}
 
 
