@@ -84,6 +84,7 @@ export default function DraftPage() {
   const [timeLeft, setTimeLeft] = useState<number | null>(null)
   const [pendingPick, setPendingPick] = useState<SeasonPokemon | null>(null)
   const [draftOrderTeamIds, setDraftOrderTeamIds] = useState<number[]>([])
+  const [rosterSize, setRosterSize] = useState(10)
   const wsRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -99,11 +100,12 @@ export default function DraftPage() {
 
   const fetchState = useCallback(async () => {
     if (!seasonId) return
-    const [stateRes, pokemonRes, teamsRes, orderRes] = await Promise.all([
+    const [stateRes, pokemonRes, teamsRes, orderRes, seasonRes] = await Promise.all([
       axios.get(`/draft/${seasonId}/state`).catch(() => null),
       axios.get(`/seasons/${seasonId}/pokemon`),
       axios.get(`/seasons/${seasonId}/teams`),
       axios.get(`/draft/${seasonId}/order`).catch(() => ({ data: [] })),
+      axios.get(`/seasons`).catch(() => ({ data: [] })),
     ])
     if (stateRes) setDraftState(stateRes.data)
     setPokemon(pokemonRes.data)
@@ -111,6 +113,8 @@ export default function DraftPage() {
     if (orderRes.data.length > 0) {
       setDraftOrderTeamIds(orderRes.data.map((o: { team_id: number }) => o.team_id))
     }
+    const season = seasonRes.data.find((s: any) => s.id === seasonId)
+    if (season?.roster_size) setRosterSize(season.roster_size)
   }, [seasonId])
 
   useEffect(() => {
@@ -230,12 +234,12 @@ export default function DraftPage() {
 
   // Compute structural slot assignments for a team's drafted pokemon
   const SLOT_ORDER = ['Mega', 'S', 'A', 'B', 'C', 'D'] as const
-  const FREE_SLOTS = 4
+  const freeSlotCount = Math.max(0, rosterSize - 6)
 
   function assignSlots(teamId: number) {
     const drafted = pokemon.filter(p => p.drafted_by_team_id === teamId)
     const slots: Record<string, SeasonPokemon | null> = { Mega: null, S: null, A: null, B: null, C: null, D: null }
-    const free: (SeasonPokemon | null)[] = [null, null, null, null]
+    const free: (SeasonPokemon | null)[] = Array(freeSlotCount).fill(null)
     for (const p of drafted) {
       if (p.is_mega) {
         if (!slots.Mega) { slots.Mega = p; continue }
