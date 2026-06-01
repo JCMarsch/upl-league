@@ -44,6 +44,7 @@ export default function PokemonTab() {
   const [seedProgress, setSeedProgress] = useState<string | null>(null)
   const [seedDone, setSeedDone] = useState(0)
   const [seedTotal, setSeedTotal] = useState(0)
+  const [fixingMega, setFixingMega] = useState(false)
   const [msg, setMsg] = useState('')
 
   const sid = selectedSeason ?? seasonId
@@ -178,6 +179,15 @@ export default function PokemonTab() {
     finally { setLocking(false) }
   }
 
+  const fixMegaSprites = async () => {
+    setFixingMega(true)
+    try {
+      const { data } = await axios.post('/admin/fix-mega-sprites', {}, { withCredentials: true })
+      setMsg(`Mega sprites fixed — PokeAPI: ${data.sprites_from_pokeapi}, Showdown fallback: ${data.sprites_from_showdown_fallback}, is_mega corrected: ${data.is_mega_corrected}`)
+    } catch (e: any) { setMsg(e.response?.data?.detail || 'Failed') }
+    finally { setFixingMega(false) }
+  }
+
   const types = useMemo(() =>
     [...new Set(pokemon.flatMap(p => [p.species_type1, p.species_type2].filter(Boolean) as string[]))].sort()
   , [pokemon])
@@ -246,6 +256,9 @@ export default function PokemonTab() {
               {saving ? 'Saving...' : `Save ${Object.keys(edits).length} change(s)`}
             </button>
           )}
+          <button onClick={fixMegaSprites} disabled={fixingMega} className="px-3 py-1.5 rounded text-sm border" style={{ borderColor: '#7c3aed', color: '#7c3aed' }}>
+            {fixingMega ? 'Fixing...' : 'Fix Mega Sprites'}
+          </button>
           <button onClick={lockTiers} disabled={locking} className="px-3 py-1.5 rounded text-sm border border-red-400 text-red-600">
             {locking ? 'Locking...' : 'Lock Tiers'}
           </button>
