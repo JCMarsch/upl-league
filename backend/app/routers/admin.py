@@ -17,7 +17,7 @@ from app.models.team import Team
 from app.models.season import Season
 from app.models.schedule import Match, Game, GameStat
 from app.models.transaction import Trade, TradeAsset, Waiver
-from app.models.pokemon import SeasonPokemon, RosterPokemon
+from app.models.pokemon import SeasonPokemon, RosterPokemon, PokemonSpecies
 from app.models.config import LeagueConfig
 from app.services.pokemon_seed import run_seed
 from app.database import SessionLocal
@@ -396,3 +396,64 @@ def start_seed_pokemon(
 def get_seed_status(_: User = Depends(require_admin)):
     with _seed_lock:
         return dict(_seed_status)
+
+
+@router.post("/fix-mega-sprites")
+def fix_mega_sprites(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """
+    For every mega pokemon with a missing sprite_url, fetch from PokeAPI
+    and fall back to a Pokemon Showdown sprite if PokeAPI has no image.
+    Also corrects any mega records where is_mega was not set to True.
+    """
+    import re
+    import requests
+
+    # Fix is_mega=False/None on any species whose forme_name contains -mega
+    stale = db.query(PokemonSpecies).filter(
+        PokemonSpecies.forme_name.contains("-mega"),
+        PokemonSpecies.is_mega != True,
+    ).all()
+    for s in stale:
+        s.is_mega = True
+
+    # Find megas with missing sprites
+    megas = db.query(PokemonSpecies).filter(
+        PokemonSpecies.is_mega == True,
+        PokemonSpecies.sprite_url == None,
+    ).all()
+
+    fixed, fallback, failed = 0, 0, []
+
+    for species in megas:
+        slug = species.forme_name
+        sprite = None
+
+        # Try PokeAPI first
+        try:
+            r = requests.get(
+                f"https://pokeapi.co/api/v2/pokemon/{slug}",
+                timeout=10,
+            )
+            if r.status_code == 200:
+                sprite = r.json().get("sprites", {}).get("front_default")
+        except Exception:
+            pass
+
+        if sprite:
+            species.sprite_url = sprite
+            fixed += 1
+        else:
+            # Pokemon Showdown sprites: charizard-mega-x → charizard-megax
+            ps_slug = re.sub(r"-mega-([xy])$", r"-mega\1", slug)
+            species.sprite_url = (
+                f"https://play.pokemonshowdown.com/sprites/gen6/{ps_slug}.png"
+            )
+            fallback += 1
+
+    db.commit()
+    return {
+        "is_mega_corrected": len(stale),
+        "sprites_from_pokeapi": fixed,
+        "sprites_from_showdown_fallback": fallback,
+        "total_updated": fixed + fallback,
+    }

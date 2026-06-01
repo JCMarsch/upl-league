@@ -2,33 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variable Theme System */
+/* ── Light theme ──────────────────────────────────── */
 :root {
   --color-primary: #2563eb;
   --color-primary-dark: #1d4ed8;
-  --color-secondary: #64748b;
-  --color-bg: #f8fafc;
+  --color-bg: #f4f1ed;
   --color-surface: #ffffff;
-  --color-text: #0f172a;
+  --color-surface-elevated: #faf7f3;
+  --color-text: #0d1117;
   --color-text-muted: #64748b;
-  --color-border: #e2e8f0;
+  --color-border: #e0d8ce;
   --color-accent: #7c3aed;
 }
 
+/* ── Dark theme ───────────────────────────────────── */
 [data-theme="dark"] {
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
-  --color-border: #334155;
+  --color-primary: #f59e0b;
+  --color-primary-dark: #d97706;
+  --color-bg: #0d1117;
+  --color-surface: #161b22;
+  --color-surface-elevated: #1c2333;
+  --color-text: #e6edf3;
+  --color-text-muted: #7d8590;
+  --color-border: #30363d;
+  --color-accent: #7c3aed;
 }
 
+/* ── Pokemon theme ────────────────────────────────── */
 [data-theme="pokemon"] {
   --color-primary: #ee1515;
   --color-primary-dark: #cc1100;
-  --color-bg: #fff9c4;
-  --color-surface: #ffffff;
-  --color-text: #1a1a2e;
+  --color-bg: #12070a;
+  --color-surface: #1e0d10;
+  --color-surface-elevated: #2a1318;
+  --color-text: #fef2f2;
+  --color-text-muted: #a07880;
+  --color-border: #3d1520;
   --color-accent: #3b4cca;
 }
 
@@ -39,11 +48,7 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
 }
 
-/* Loading skeleton */
 .skeleton {
-  @apply animate-pulse bg-gray-200 rounded;
-}
-
-[data-theme="dark"] .skeleton {
-  @apply bg-gray-700;
+  @apply animate-pulse rounded;
+  background-color: var(--color-border);
 }

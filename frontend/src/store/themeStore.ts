@@ -7,9 +7,12 @@ interface ThemeState {
   setTheme: (theme: Theme) => void
 }
 
-export const useThemeStore = create<ThemeState>((set) => ({
-  theme: (localStorage.getItem('theme') as Theme) || 'light',
+const initialTheme = (localStorage.getItem('theme') as Theme) || 'dark'
+// Apply immediately — prevents a flash of the wrong theme before React hydrates
+document.documentElement.setAttribute('data-theme', initialTheme)
 
+export const useThemeStore = create<ThemeState>((set) => ({
+  theme: initialTheme,
   setTheme: (theme) => {
     localStorage.setItem('theme', theme)
     document.documentElement.setAttribute('data-theme', theme)
