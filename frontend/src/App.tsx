@@ -36,11 +36,11 @@ function Home() {
   )
 }
 
-function Layout({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
+function Layout({ children, wide = false, dark = false }: { children: React.ReactNode; wide?: boolean; dark?: boolean }) {
   return (
-    <div style={{ background: 'var(--color-bg)', minHeight: '100vh', color: 'var(--color-text)' }}>
+    <div style={{ background: dark ? '#0d1117' : 'var(--color-bg)', minHeight: '100vh', color: dark ? '#e6edf3' : 'var(--color-text)' }}>
       <NavBar />
-      <main className={`${wide ? 'w-full px-3' : 'max-w-[1600px] mx-auto px-4'} py-4`}>
+      <main className={`${wide ? 'w-full px-3' : 'max-w-[1600px] mx-auto px-4'} ${dark ? 'py-0' : 'py-4'}`}>
         {children}
       </main>
     </div>
@@ -79,7 +79,7 @@ function App() {
         <Route path="/playoffs" element={<Layout><PlayoffsPage /></Layout>} />
 
         {/* Protected pages (login required) */}
-        <Route path="/draft" element={<ProtectedRoute><Layout><DraftPage /></Layout></ProtectedRoute>} />
+        <Route path="/draft" element={<ProtectedRoute><Layout dark><DraftPage /></Layout></ProtectedRoute>} />
         <Route path="/transactions" element={<ProtectedRoute><Layout><TransactionsPage /></Layout></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><Layout><NotificationsPage /></Layout></ProtectedRoute>} />
 

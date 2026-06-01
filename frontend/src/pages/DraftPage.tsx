@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useActiveSeason } from '../hooks/useActiveSeason'
-import { TIERS, TIER_COLORS, MEGA_BANNER_COLORS } from '../constants/tiers'
+import { TIERS, MEGA_BANNER_COLORS } from '../constants/tiers'
 
 interface DraftState {
   id: number
@@ -44,6 +44,30 @@ interface Team {
   manager_id: number
 }
 
+// Dark draft room color tokens
+const D = {
+  bg: '#0d1117',
+  surface: '#161b22',
+  elevated: '#1c2333',
+  border: '#30363d',
+  text: '#e6edf3',
+  muted: '#7d8590',
+  amber: '#f59e0b',
+  green: '#238636',
+  red: '#da3633',
+} as const
+
+// Tier badge styles tuned for dark backgrounds
+const TIER_DARK: Record<string, { bg: string; color: string }> = {
+  Mega: { bg: '#7c3aed', color: '#fff' },
+  S:    { bg: '#b91c1c', color: '#fff' },
+  A:    { bg: '#c2410c', color: '#fff' },
+  B:    { bg: '#a16207', color: '#fff' },
+  C:    { bg: '#15803d', color: '#fff' },
+  D:    { bg: '#1d4ed8', color: '#fff' },
+  Free: { bg: '#374151', color: '#9ca3af' },
+}
+
 const TYPE_COLORS: Record<string, string> = {
   Fire: '#EE8130', Water: '#6390F0', Grass: '#7AC74C', Electric: '#F7D02C',
   Ice: '#96D9D6', Fighting: '#C22E28', Poison: '#A33EA1', Ground: '#E2BF65',
@@ -67,6 +91,76 @@ function getTimeLeft(draftState: DraftState): number | null {
   const expiryMs = startMs + draftState.timer_seconds * 1000
   return Math.max(0, Math.ceil((expiryMs - Date.now()) / 1000))
 }
+
+// ── Pokemon row ──────────────────────────────────────────────────────────────
+
+interface PokemonRowProps {
+  p: SeasonPokemon
+  canPick: boolean
+  pendingPick: SeasonPokemon | null
+  picking: boolean
+  onPick: (p: SeasonPokemon) => void
+}
+
+function PokemonRow({ p, canPick, pendingPick, picking, onPick }: PokemonRowProps) {
+  const isSelected = pendingPick?.id === p.id
+  const badge = p.is_mega ? TIER_DARK.Mega : (TIER_DARK[p.tier ?? ''] ?? TIER_DARK.Free)
+  return (
+    <div
+      className="flex items-center gap-3 px-3 py-2 border-b transition-colors"
+      style={{
+        borderColor: D.border,
+        background: isSelected ? `${D.amber}18` : undefined,
+      }}
+    >
+      <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center">
+        {p.species_sprite_url ? (
+          <img
+            src={p.species_sprite_url}
+            alt={p.species_name ?? ''}
+            className="w-12 h-12 object-contain"
+            style={{ imageRendering: 'pixelated' }}
+          />
+        ) : (
+          <div className="w-10 h-10 rounded" style={{ background: D.border }} />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm capitalize" style={{ color: D.text }}>{p.species_name}</div>
+        <div className="flex gap-1 mt-0.5 flex-wrap">
+          {p.species_type1 && (
+            <span className="rounded text-white" style={{ background: TYPE_COLORS[p.species_type1] ?? '#888', fontSize: 10, padding: '1px 5px' }}>{p.species_type1}</span>
+          )}
+          {p.species_type2 && (
+            <span className="rounded text-white" style={{ background: TYPE_COLORS[p.species_type2] ?? '#888', fontSize: 10, padding: '1px 5px' }}>{p.species_type2}</span>
+          )}
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0 mr-1">
+        <div className="font-bold font-display" style={{ color: D.amber, fontSize: '0.9rem', letterSpacing: '0.02em' }}>{p.point_cost ?? '?'}</div>
+        <div className="font-display" style={{ color: D.muted, fontSize: 10, letterSpacing: '0.06em' }}>PTS</div>
+      </div>
+      {canPick && (
+        <button
+          onClick={() => onPick(p)}
+          disabled={picking || isSelected}
+          className="flex-shrink-0 rounded transition-colors disabled:opacity-50 font-display font-bold"
+          style={{
+            background: isSelected ? D.border : D.green,
+            color: '#fff',
+            letterSpacing: '0.1em',
+            fontSize: '0.7rem',
+            padding: '5px 10px',
+          }}
+        >
+          {isSelected ? 'SELECTED' : 'DRAFT'}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
 
 export default function DraftPage() {
   const { user } = useAuthStore()
@@ -92,11 +186,14 @@ export default function DraftPage() {
   const myTeam = teams.find(t => t.manager_id === user?.id)
   const isMyTurn = draftState?.current_team_id === myTeam?.id
   const pickingTeam = teams.find(t => t.id === draftState?.current_team_id)
-
   const canPick = draftState?.status === 'active' && (isMyTurn || isAdmin)
 
   const nextPickNum = draftState && draftState.status === 'active' ? draftState.current_pick_number + 1 : null
   const nextTeamId = nextPickNum && draftOrderTeamIds.length ? getNextTeamId(draftOrderTeamIds, nextPickNum) : null
+
+  const currentRound = teams.length > 0 && draftState
+    ? Math.ceil(draftState.current_pick_number / teams.length)
+    : 1
 
   const fetchState = useCallback(async () => {
     if (!seasonId) return
@@ -122,42 +219,30 @@ export default function DraftPage() {
     fetchState().finally(() => setLoading(false))
   }, [seasonId, fetchState])
 
-  // Timer — synced from server pick_started_at
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
     if (draftState?.status === 'active' && draftState.timer_seconds && draftState.pick_started_at) {
       setTimeLeft(getTimeLeft(draftState))
-      timerRef.current = setInterval(() => {
-        setTimeLeft(getTimeLeft(draftState))
-      }, 500)
+      timerRef.current = setInterval(() => setTimeLeft(getTimeLeft(draftState)), 500)
     } else {
       setTimeLeft(null)
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [draftState?.status, draftState?.current_pick_number, draftState?.pick_started_at])
 
-  // WebSocket
   useEffect(() => {
     if (!seasonId) return
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const host = window.location.host
-    const ws = new WebSocket(`${proto}://${host}/draft/ws/${seasonId}`)
+    const ws = new WebSocket(`${proto}://${window.location.host}/draft/ws/${seasonId}`)
     wsRef.current = ws
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data)
       if (msg.type === 'pick') {
-        // Apply update locally — no round-trip needed
         if (msg.state) setDraftState(msg.state)
-        if (msg.drafted_pokemon_id && msg.team_id != null) {
-          setPokemon(prev => prev.map(p =>
-            p.id === msg.drafted_pokemon_id ? { ...p, drafted_by_team_id: msg.team_id } : p
-          ))
-        }
-        if (msg.team_id != null && msg.points_remaining != null) {
-          setTeams(prev => prev.map(t =>
-            t.id === msg.team_id ? { ...t, points_remaining: msg.points_remaining } : t
-          ))
-        }
+        if (msg.drafted_pokemon_id && msg.team_id != null)
+          setPokemon(prev => prev.map(p => p.id === msg.drafted_pokemon_id ? { ...p, drafted_by_team_id: msg.team_id } : p))
+        if (msg.team_id != null && msg.points_remaining != null)
+          setTeams(prev => prev.map(t => t.id === msg.team_id ? { ...t, points_remaining: msg.points_remaining } : t))
         if (msg.pick) setPicks(prev => [...prev, msg.pick])
         setPendingPick(null)
       } else if (msg.type === 'state_change') {
@@ -165,9 +250,7 @@ export default function DraftPage() {
         setPendingPick(null)
       }
     }
-    ws.onclose = () => {
-      setTimeout(() => { fetchState() }, 2000)
-    }
+    ws.onclose = () => setTimeout(() => fetchState(), 2000)
     return () => ws.close()
   }, [seasonId, fetchState])
 
@@ -180,24 +263,14 @@ export default function DraftPage() {
         { season_pokemon_id: pendingPick.id },
         { withCredentials: true },
       )
-      // Update everything locally from the response — no extra fetches
       setDraftState(data.state)
-      setPokemon(prev => prev.map(p =>
-        p.id === data.drafted_pokemon_id ? { ...p, drafted_by_team_id: data.team_id } : p
-      ))
-      setTeams(prev => prev.map(t =>
-        t.id === data.team_id ? { ...t, points_remaining: data.points_remaining } : t
-      ))
+      setPokemon(prev => prev.map(p => p.id === data.drafted_pokemon_id ? { ...p, drafted_by_team_id: data.team_id } : p))
+      setTeams(prev => prev.map(t => t.id === data.team_id ? { ...t, points_remaining: data.points_remaining } : t))
       setPicks(prev => [...prev, data.pick])
       setPendingPick(null)
-      // Broadcast to other clients with full pick data so they can also update locally
       wsRef.current?.send(JSON.stringify({
-        type: 'pick',
-        state: data.state,
-        drafted_pokemon_id: data.drafted_pokemon_id,
-        team_id: data.team_id,
-        points_remaining: data.points_remaining,
-        pick: data.pick,
+        type: 'pick', state: data.state, drafted_pokemon_id: data.drafted_pokemon_id,
+        team_id: data.team_id, points_remaining: data.points_remaining, pick: data.pick,
       }))
     } catch (e: any) {
       setMsg(e.response?.data?.detail || 'Pick failed')
@@ -226,13 +299,11 @@ export default function DraftPage() {
     if (!window.confirm('Reset the entire draft? This will undo ALL picks and restore all team budgets. This cannot be undone.')) return
     try {
       await axios.post(`/draft/${seasonId}/reset`, {}, { withCredentials: true })
-      setPendingPick(null)
-      setPicks([])
+      setPendingPick(null); setPicks([])
       await fetchState()
     } catch (e: any) { setMsg(e.response?.data?.detail || 'Reset failed') }
   }
 
-  // Compute structural slot assignments for a team's drafted pokemon
   const SLOT_ORDER = ['Mega', 'S', 'A', 'B', 'C', 'D'] as const
   const freeSlotCount = Math.max(0, rosterSize - 6)
 
@@ -256,9 +327,7 @@ export default function DraftPage() {
   }
 
   const available = pokemon.filter(p => p.is_legal && !p.drafted_by_team_id)
-  const tabAvailable = megaTab
-    ? available.filter(p => p.is_mega)
-    : available.filter(p => !p.is_mega)
+  const tabAvailable = megaTab ? available.filter(p => p.is_mega) : available.filter(p => !p.is_mega)
   const regularTiers = TIERS.filter(t => t !== 'Mega')
   const filtered = tabAvailable.filter(p => {
     if (tierFilter && p.tier !== tierFilter) return false
@@ -268,383 +337,442 @@ export default function DraftPage() {
 
   const teamName = (id: number | null) => id ? (teams.find(t => t.id === id)?.name ?? `Team ${id}`) : '—'
 
-  if (loading) return <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>Loading draft...</div>
-
-  if (!draftState) {
+  // ── Loading ──────────────────────────────────────────────────────────────
+  if (loading) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-2xl font-bold">Draft Room</h1>
-        <div className="p-8 rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
-          <p className="text-lg font-semibold mb-4">Draft has not been set up yet.</p>
-          <p className="text-sm mb-4" style={{ color: 'var(--color-text-muted)' }}>Before the draft can begin, an admin must complete these steps:</p>
-          <ol className="space-y-2 mb-6 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>1.</span> Import all Pokemon and apply a regulation preset (Admin → Pokemon table)</li>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>2.</span> Assign every legal Pokemon to a tier — either via drag-and-drop or CSV upload (Admin → Tier List)</li>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>3.</span> Lock tiers once assignments are complete (Admin → Pokemon table → Lock Tiers)</li>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>4.</span> Ensure at least one team is registered for this season (Admin → Seasons)</li>
-            <li className="flex gap-2"><span className="font-bold" style={{ color: 'var(--color-primary)' }}>5.</span> Set the draft order (Admin → Draft Order) — this creates the draft room</li>
-          </ol>
-          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Contact your league admin to get this set up.</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: D.bg }}>
+        <div className="font-display font-bold tracking-widest" style={{ color: D.muted, letterSpacing: '0.15em' }}>
+          LOADING DRAFT…
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Pre-start ready room banner */}
-      {draftState.status === 'pending' && (
-        <div className="flex items-center justify-between gap-4 p-4 rounded-xl border-2" style={{ borderColor: 'var(--color-primary)', background: 'var(--color-surface)' }}>
-          <div>
-            <div className="font-bold text-lg">Draft Room — Waiting to Start</div>
-            <div className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-              All managers can see this page. When everyone is ready, click START DRAFT.
-            </div>
-          </div>
-          {isAdmin && (
-            <button
-              onClick={startDraft}
-              className="px-6 py-2 rounded text-white font-bold text-sm flex-shrink-0"
-              style={{ background: 'var(--color-primary)', letterSpacing: '0.05em' }}
-            >
-              START DRAFT
-            </button>
-          )}
-          {!isAdmin && (
-            <span className="text-sm font-medium px-4 py-2 rounded" style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
-              Waiting for admin to start…
-            </span>
-          )}
+  // ── Not set up ───────────────────────────────────────────────────────────
+  if (!draftState) {
+    return (
+      <div className="min-h-screen p-6" style={{ background: D.bg, color: D.text }}>
+        <h1 className="font-display font-bold text-2xl mb-6" style={{ letterSpacing: '0.1em' }}>DRAFT ROOM</h1>
+        <div className="rounded-xl border p-6 max-w-2xl" style={{ borderColor: D.border, background: D.surface }}>
+          <p className="font-display font-bold text-lg mb-1" style={{ letterSpacing: '0.06em' }}>DRAFT HAS NOT BEEN SET UP YET</p>
+          <p className="text-sm mb-5" style={{ color: D.muted }}>Before the draft can begin, an admin must complete these steps:</p>
+          <ol className="space-y-3 mb-5 text-sm" style={{ color: D.muted }}>
+            {[
+              'Import all Pokemon and apply a regulation preset (Admin → Pokemon table)',
+              'Assign every legal Pokemon to a tier — drag-and-drop or CSV upload (Admin → Tier List)',
+              'Lock tiers once assignments are complete (Admin → Pokemon table → Lock Tiers)',
+              'Ensure at least one team is registered for this season (Admin → Seasons)',
+              'Set the draft order (Admin → Draft Order) — this creates the draft room',
+            ].map((step, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="font-display font-bold flex-shrink-0" style={{ color: D.amber }}>{i + 1}.</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="text-sm" style={{ color: D.muted }}>Contact your league admin to get this set up.</p>
         </div>
-      )}
+      </div>
+    )
+  }
 
-      {/* Header bar */}
-      <div className="flex items-center justify-between flex-wrap gap-3 p-4 rounded-xl border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
-        <div>
-          <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Pick #{draftState.current_pick_number} · Status: {draftState.status}
-          </div>
-          <div className="text-lg font-bold mt-0.5">
-            {draftState.status === 'active' ? (
-              <>
-                <span className={isMyTurn ? 'text-green-500' : ''}>
-                  On the clock: {teamName(draftState.current_team_id)}
-                </span>
-                {isAdmin && pickingTeam && (
-                  <span className="ml-2 text-sm font-normal px-2 py-0.5 rounded" style={{ background: 'var(--color-bg)', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
-                    Picking for: {pickingTeam.name}
-                  </span>
-                )}
-                {isMyTurn && !isAdmin && (
-                  <span className="ml-2 text-green-500 text-sm"> ← Your pick!</span>
-                )}
-              </>
-            ) : draftState.status === 'paused' ? (
-              '⏸ Draft Paused'
-            ) : draftState.status === 'complete' ? (
-              '✅ Draft Complete'
-            ) : (
-              'Draft not started'
-            )}
-          </div>
+  // ── Draft room ───────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen" style={{ background: D.bg, color: D.text }}>
+
+      {/* ── Scoreboard header ── */}
+      <div className="flex items-center justify-between gap-4 px-4 py-3" style={{ background: D.surface, borderBottom: `1px solid ${D.border}` }}>
+        <div className="flex items-center gap-3">
+          <span className="font-display font-bold text-lg text-white" style={{ letterSpacing: '0.12em' }}>
+            UPL DRAFT
+          </span>
+          <span className="text-xs rounded px-2 py-0.5 font-display font-bold" style={{
+            background: draftState.status === 'active' ? `${D.green}30` : draftState.status === 'paused' ? `${D.amber}20` : draftState.status === 'complete' ? `${D.green}20` : `${D.muted}20`,
+            color: draftState.status === 'active' ? D.green : draftState.status === 'paused' ? D.amber : draftState.status === 'complete' ? D.green : D.muted,
+            letterSpacing: '0.1em',
+          }}>
+            {draftState.status.toUpperCase()}
+          </span>
         </div>
+
+        {draftState.status !== 'pending' && (
+          <div className="font-display font-bold text-sm" style={{ color: D.amber, letterSpacing: '0.1em' }}>
+            ROUND {currentRound} &nbsp;·&nbsp; PICK {draftState.current_pick_number}
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           {timeLeft !== null && (
-            <div className="text-2xl font-mono font-bold" style={{ color: timeLeft < 30 ? '#ef4444' : timeLeft < 60 ? '#f59e0b' : 'var(--color-text)' }}>
+            <div className="font-display font-bold text-2xl tabular-nums" style={{
+              color: timeLeft < 30 ? D.red : timeLeft < 60 ? D.amber : D.text,
+              letterSpacing: '0.05em',
+              minWidth: '4rem',
+              textAlign: 'right',
+              textShadow: timeLeft < 30 ? `0 0 12px ${D.red}80` : undefined,
+            }}>
               {String(Math.floor(timeLeft / 60)).padStart(2, '0')}:{String(timeLeft % 60).padStart(2, '0')}
             </div>
           )}
           {isAdmin && draftState.status !== 'complete' && draftState.status !== 'pending' && (
-            <button onClick={pauseResume} className="px-3 py-1.5 text-sm border rounded" style={{ borderColor: 'var(--color-border)' }}>
-              {draftState.status === 'active' ? 'Pause' : 'Resume'}
+            <button onClick={pauseResume} className="text-xs px-3 py-1.5 rounded border font-display font-bold transition-colors hover:opacity-80" style={{ borderColor: D.border, color: D.muted, background: 'transparent', letterSpacing: '0.08em' }}>
+              {draftState.status === 'active' ? 'PAUSE' : 'RESUME'}
             </button>
           )}
           {isAdmin && (
-            <button onClick={resetDraft} className="px-3 py-1.5 text-sm border rounded" style={{ borderColor: '#ef4444', color: '#ef4444' }}>
-              Reset
+            <button onClick={resetDraft} className="text-xs px-3 py-1.5 rounded border font-display font-bold transition-colors hover:opacity-80" style={{ borderColor: D.red, color: D.red, background: 'transparent', letterSpacing: '0.08em' }}>
+              RESET
             </button>
           )}
         </div>
       </div>
 
-      {/* Pending pick confirmation banner */}
-      {pendingPick && (
-        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border-2" style={{ borderColor: 'var(--color-primary)', background: 'var(--color-surface)' }}>
-          <div className="flex items-center gap-3">
-            {pendingPick.species_sprite_url && (
-              <img src={pendingPick.species_sprite_url} alt={pendingPick.species_name ?? ''} className="w-12 h-12 object-contain" />
-            )}
+      <div className="p-4 space-y-3">
+
+        {/* ── Waiting to start ── */}
+        {draftState.status === 'pending' && (
+          <div className="flex items-center justify-between gap-4 p-4 rounded-xl border-l-4" style={{ background: `${D.amber}10`, borderColor: D.amber, borderStyle: 'solid', borderWidth: '1px', borderLeftWidth: '4px' }}>
             <div>
-              <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Confirm pick?</div>
-              <div className="font-bold">{pendingPick.species_name}</div>
-              <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-                {pendingPick.tier} · {pendingPick.point_cost ?? '?'} pts
+              <div className="font-display font-bold mb-1" style={{ color: D.amber, letterSpacing: '0.1em' }}>
+                DRAFT ROOM — WAITING TO START
+              </div>
+              <div className="text-sm" style={{ color: D.muted }}>
+                All managers can see this page. When everyone is ready, click START DRAFT.
               </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={confirmPick}
-              disabled={picking}
-              className="px-4 py-2 rounded text-white font-semibold text-sm disabled:opacity-50"
-              style={{ background: '#22c55e' }}
-            >
-              {picking ? 'Picking…' : 'Confirm'}
-            </button>
-            <button
-              onClick={() => setPendingPick(null)}
-              className="px-4 py-2 rounded text-sm border"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {msg && <p className="text-sm text-red-500">{msg}</p>}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Available Pokemon */}
-        <div className="lg:col-span-2 space-y-3">
-          {/* Mega / Regular tabs */}
-          <div className="flex gap-0 border rounded-lg overflow-hidden" style={{ borderColor: 'var(--color-border)' }}>
-            <button
-              onClick={() => { setMegaTab(false); setTierFilter('') }}
-              className="flex-1 py-1.5 text-sm font-medium transition-colors"
-              style={{
-                background: !megaTab ? 'var(--color-primary)' : 'var(--color-surface)',
-                color: !megaTab ? '#fff' : 'var(--color-text-muted)',
-              }}
-            >
-              Regular ({available.filter(p => !p.is_mega).length})
-            </button>
-            <button
-              onClick={() => { setMegaTab(true); setTierFilter('') }}
-              className="flex-1 py-1.5 text-sm font-medium transition-colors"
-              style={{
-                background: megaTab ? TIER_COLORS['Mega'].label : 'var(--color-surface)',
-                color: megaTab ? '#fff' : 'var(--color-text-muted)',
-              }}
-            >
-              Mega ({available.filter(p => p.is_mega).length})
-            </button>
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <input
-              placeholder="Search Pokemon..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 border rounded px-3 py-1.5 text-sm"
-              style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-            />
-            {!megaTab && (
-              <select
-                value={tierFilter}
-                onChange={e => setTierFilter(e.target.value)}
-                className="border rounded px-2 py-1.5 text-sm"
-                style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-              >
-                <option value="">All Tiers</option>
-                {regularTiers.map(t => <option key={t}>{t}</option>)}
-              </select>
+            {isAdmin ? (
+              <button onClick={startDraft} className="flex-shrink-0 px-6 py-2 rounded font-display font-bold transition-colors hover:opacity-90" style={{ background: D.amber, color: '#000', letterSpacing: '0.1em' }}>
+                START DRAFT
+              </button>
+            ) : (
+              <span className="text-xs px-3 py-1.5 rounded border font-display" style={{ borderColor: D.border, color: D.muted, letterSpacing: '0.06em' }}>
+                WAITING FOR ADMIN…
+              </span>
             )}
           </div>
+        )}
 
-          <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{filtered.length} available</div>
+        {/* ── On the clock ── */}
+        {draftState.status === 'active' && (
+          <div
+            className="flex items-center justify-between gap-4 p-3 rounded-xl border-l-4"
+            style={{
+              background: isMyTurn ? `${D.green}18` : `${D.amber}10`,
+              borderColor: isMyTurn ? D.green : D.amber,
+              borderStyle: 'solid',
+              borderWidth: '1px',
+              borderLeftWidth: '4px',
+              boxShadow: isMyTurn ? `0 0 24px ${D.green}25` : undefined,
+            }}
+          >
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-display font-bold text-xs" style={{ color: isMyTurn ? D.green : D.amber, letterSpacing: '0.14em' }}>
+                ▶ ON THE CLOCK
+              </span>
+              <span className="font-display font-bold text-xl" style={{ color: D.text, letterSpacing: '0.02em' }}>
+                {teamName(draftState.current_team_id)}
+              </span>
+              {isAdmin && pickingTeam && (
+                <span className="text-xs px-2 py-0.5 rounded" style={{ background: D.elevated, color: D.muted, border: `1px solid ${D.border}` }}>
+                  picking as admin
+                </span>
+              )}
+            </div>
+            {isMyTurn && (
+              <span className="font-display font-bold flex-shrink-0" style={{ color: D.green, letterSpacing: '0.1em', textShadow: `0 0 10px ${D.green}60` }}>
+                ← YOUR PICK!
+              </span>
+            )}
+          </div>
+        )}
 
-          <div className="overflow-y-auto border rounded-lg" style={{ borderColor: 'var(--color-border)', maxHeight: '60vh' }}>
-            {regularTiers.map(tier => {
-              const tierPokemon = filtered.filter(p => p.tier === tier)
-              if (tierPokemon.length === 0) return null
-              return (
-                <div key={tier}>
-                  <div className="sticky top-0 px-3 py-1 text-xs font-bold" style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
-                    Tier {tier}
+        {/* ── Paused ── */}
+        {draftState.status === 'paused' && (
+          <div className="p-3 rounded-xl border text-center font-display font-bold" style={{ background: `${D.muted}10`, borderColor: D.border, color: D.muted, letterSpacing: '0.1em' }}>
+            ⏸ &nbsp; DRAFT PAUSED
+          </div>
+        )}
+
+        {/* ── Complete ── */}
+        {draftState.status === 'complete' && (
+          <div className="p-3 rounded-xl border text-center font-display font-bold" style={{ background: `${D.green}12`, borderColor: D.green, color: D.green, letterSpacing: '0.1em' }}>
+            ✓ &nbsp; DRAFT COMPLETE
+          </div>
+        )}
+
+        {/* ── Pending pick confirmation ── */}
+        {pendingPick && (
+          <div className="flex items-center justify-between gap-4 p-3 rounded-xl border-l-4" style={{ background: `${D.green}12`, borderColor: D.green, borderStyle: 'solid', borderWidth: '1px', borderLeftWidth: '4px' }}>
+            <div className="flex items-center gap-3">
+              {pendingPick.species_sprite_url && (
+                <img src={pendingPick.species_sprite_url} alt={pendingPick.species_name ?? ''} className="w-16 h-16 object-contain flex-shrink-0" style={{ imageRendering: 'pixelated' }} />
+              )}
+              <div>
+                <div className="font-display text-xs mb-1" style={{ color: D.muted, letterSpacing: '0.1em' }}>CONFIRM PICK?</div>
+                <div className="font-display font-bold text-lg capitalize" style={{ color: D.text, letterSpacing: '0.04em' }}>
+                  {pendingPick.species_name}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  {pendingPick.tier && (
+                    <span className="font-display font-bold text-xs px-2 py-0.5 rounded" style={{ background: (pendingPick.is_mega ? TIER_DARK.Mega : TIER_DARK[pendingPick.tier])?.bg ?? '#333', color: '#fff', letterSpacing: '0.06em' }}>
+                      {pendingPick.is_mega ? 'MEGA' : pendingPick.tier}
+                    </span>
+                  )}
+                  <span className="font-display font-bold" style={{ color: D.amber, letterSpacing: '0.04em' }}>
+                    {pendingPick.point_cost ?? '?'} PTS
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              <button
+                onClick={confirmPick}
+                disabled={picking}
+                className="px-5 py-2 rounded font-display font-bold disabled:opacity-50 transition-colors hover:opacity-90"
+                style={{ background: D.green, color: '#fff', letterSpacing: '0.1em' }}
+              >
+                {picking ? 'DRAFTING…' : 'CONFIRM'}
+              </button>
+              <button
+                onClick={() => setPendingPick(null)}
+                className="px-4 py-2 rounded border font-display font-bold transition-colors hover:opacity-70"
+                style={{ borderColor: D.border, color: D.muted, background: 'transparent', letterSpacing: '0.08em' }}
+              >
+                CANCEL
+              </button>
+            </div>
+          </div>
+        )}
+
+        {msg && <p className="text-sm" style={{ color: D.red }}>{msg}</p>}
+
+        {/* ── Main grid ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+          {/* Available Pokemon — 2/3 */}
+          <div className="lg:col-span-2 flex flex-col gap-3">
+
+            {/* Regular / Mega tabs */}
+            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: D.border }}>
+              <button
+                onClick={() => { setMegaTab(false); setTierFilter('') }}
+                className="flex-1 py-2 font-display font-bold transition-colors"
+                style={{
+                  background: !megaTab ? D.amber : D.surface,
+                  color: !megaTab ? '#000' : D.muted,
+                  letterSpacing: '0.1em',
+                  fontSize: '0.8rem',
+                }}
+              >
+                REGULAR ({available.filter(p => !p.is_mega).length})
+              </button>
+              <button
+                onClick={() => { setMegaTab(true); setTierFilter('') }}
+                className="flex-1 py-2 font-display font-bold transition-colors"
+                style={{
+                  background: megaTab ? TIER_DARK.Mega.bg : D.surface,
+                  color: megaTab ? '#fff' : D.muted,
+                  letterSpacing: '0.1em',
+                  fontSize: '0.8rem',
+                }}
+              >
+                MEGA ({available.filter(p => p.is_mega).length})
+              </button>
+            </div>
+
+            {/* Search + tier filter */}
+            <div className="flex gap-2">
+              <input
+                placeholder="Search Pokemon…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="flex-1 rounded px-3 py-2 text-sm border outline-none"
+                style={{ background: D.surface, borderColor: D.border, color: D.text }}
+                onFocus={e => (e.target.style.borderColor = D.amber)}
+                onBlur={e => (e.target.style.borderColor = D.border)}
+              />
+              {!megaTab && (
+                <select
+                  value={tierFilter}
+                  onChange={e => setTierFilter(e.target.value)}
+                  className="rounded px-2 py-2 text-sm border"
+                  style={{ background: D.surface, borderColor: D.border, color: D.text }}
+                >
+                  <option value="">All Tiers</option>
+                  {regularTiers.map(t => <option key={t}>{t}</option>)}
+                </select>
+              )}
+            </div>
+
+            <div className="font-display text-xs" style={{ color: D.muted, letterSpacing: '0.08em' }}>
+              {filtered.length} AVAILABLE
+            </div>
+
+            {/* Pokemon list */}
+            <div className="rounded-xl border overflow-hidden overflow-y-auto" style={{ borderColor: D.border, background: D.surface, maxHeight: '60vh' }}>
+              {regularTiers.map(tier => {
+                const tierPokemon = filtered.filter(p => p.tier === tier)
+                if (tierPokemon.length === 0) return null
+                const badge = TIER_DARK[tier] ?? TIER_DARK.Free
+                return (
+                  <div key={tier}>
+                    <div className="sticky top-0 flex items-center gap-2 px-3 py-1.5" style={{ background: D.elevated, borderBottom: `1px solid ${D.border}` }}>
+                      <span className="font-display font-bold text-xs px-2 py-0.5 rounded" style={{ background: badge.bg, color: badge.color, letterSpacing: '0.08em' }}>
+                        {tier}
+                      </span>
+                      <span className="font-display text-xs" style={{ color: D.muted }}>
+                        {tierPokemon.length} left
+                      </span>
+                    </div>
+                    {tierPokemon.map(p => (
+                      <PokemonRow key={p.id} p={p} canPick={!!canPick} pendingPick={pendingPick} picking={picking} onPick={setPendingPick} />
+                    ))}
                   </div>
-                  {tierPokemon.map(p => (
-                    <div
-                      key={p.id}
-                      className="flex items-center gap-3 px-3 py-2 border-b"
-                      style={{
-                        borderColor: 'var(--color-border)',
-                        background: pendingPick?.id === p.id ? 'color-mix(in srgb, var(--color-primary) 10%, var(--color-surface))' : undefined,
-                      }}
-                    >
-                      {p.species_sprite_url && (
-                        <img src={p.species_sprite_url} alt={p.species_name ?? ''} className="w-10 h-10 object-contain flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm">{p.species_name}</div>
-                        <div className="flex gap-1 mt-0.5">
-                          {p.species_type1 && (
-                            <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: TYPE_COLORS[p.species_type1] ?? '#888' }}>{p.species_type1}</span>
-                          )}
-                          {p.species_type2 && (
-                            <span className="text-xs px-1.5 py-0.5 rounded text-white" style={{ background: TYPE_COLORS[p.species_type2] ?? '#888' }}>{p.species_type2}</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-sm font-mono">{p.point_cost ?? '?'} pts</div>
-                        {canPick && (
-                          <button
-                            onClick={() => setPendingPick(p)}
-                            disabled={picking || pendingPick?.id === p.id}
-                            className="text-xs px-2 py-0.5 rounded text-white mt-1 disabled:opacity-50"
-                            style={{ background: pendingPick?.id === p.id ? '#6b7280' : 'var(--color-primary)' }}
-                          >
-                            {pendingPick?.id === p.id ? 'Selected' : 'Pick'}
-                          </button>
-                        )}
+                )
+              })}
+
+              {/* Mega tab — flat list */}
+              {megaTab && filtered.map(p => (
+                <PokemonRow key={p.id} p={p} canPick={!!canPick} pendingPick={pendingPick} picking={picking} onPick={setPendingPick} />
+              ))}
+
+              {/* Untiered */}
+              {!megaTab && filtered.filter(p => !p.tier).length > 0 && (
+                <div>
+                  <div className="sticky top-0 px-3 py-1.5" style={{ background: D.elevated, borderBottom: `1px solid ${D.border}` }}>
+                    <span className="font-display text-xs" style={{ color: D.muted, letterSpacing: '0.08em' }}>UNTIERED</span>
+                  </div>
+                  {filtered.filter(p => !p.tier).map(p => (
+                    <PokemonRow key={p.id} p={p} canPick={!!canPick} pendingPick={pendingPick} picking={picking} onPick={setPendingPick} />
+                  ))}
+                </div>
+              )}
+
+              {filtered.length === 0 && (
+                <div className="p-8 text-center font-display" style={{ color: D.muted, letterSpacing: '0.08em' }}>
+                  NO POKEMON MATCH YOUR FILTER
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Teams panel — 1/3 */}
+          <div className="space-y-3 overflow-y-auto" style={{ maxHeight: '70vh' }}>
+            {teams.map(team => {
+              const isCurrentPick = team.id === draftState.current_team_id && draftState.status === 'active'
+              const isNextPick = team.id === nextTeamId && team.id !== draftState.current_team_id
+              const budgetPct = Math.max(0, Math.min(100, (team.points_remaining / 900) * 100))
+              const { slots, free } = assignSlots(team.id)
+
+              return (
+                <div
+                  key={team.id}
+                  className="rounded-xl overflow-hidden border"
+                  style={{
+                    borderColor: isCurrentPick ? D.amber : D.border,
+                    background: D.surface,
+                    boxShadow: isCurrentPick ? `0 0 0 1px ${D.amber}40, 0 0 20px ${D.amber}15` : undefined,
+                  }}
+                >
+                  {isCurrentPick && (
+                    <div className="text-center py-0.5 font-display font-bold text-xs tracking-widest" style={{ background: D.amber, color: '#000' }}>
+                      ON THE CLOCK
+                    </div>
+                  )}
+                  {isNextPick && (
+                    <div className="text-center py-0.5 font-display font-bold text-xs tracking-widest" style={{ background: '#78350f', color: D.amber }}>
+                      NEXT PICK
+                    </div>
+                  )}
+
+                  <div className="p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-semibold text-sm" style={{ color: D.text }}>{team.name}</div>
+                      <div className="font-display font-bold text-xs" style={{ color: D.amber, letterSpacing: '0.04em' }}>
+                        {team.points_remaining} PTS
                       </div>
                     </div>
-                  ))}
+
+                    {/* Budget bar */}
+                    <div className="h-1 rounded-full mb-3 overflow-hidden" style={{ background: D.border }}>
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${budgetPct}%`,
+                          background: budgetPct > 50 ? D.green : budgetPct > 25 ? D.amber : D.red,
+                        }}
+                      />
+                    </div>
+
+                    {/* Slot grid */}
+                    <div className="flex gap-1 flex-wrap">
+                      {SLOT_ORDER.map(slotKey => {
+                        const p = slots[slotKey]
+                        const badge = TIER_DARK[slotKey] ?? TIER_DARK.Free
+                        const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
+                        return (
+                          <div
+                            key={slotKey}
+                            className="relative flex-shrink-0 rounded"
+                            style={{ width: 38, height: 46 }}
+                            title={p ? `#${pickNum ?? '?'} ${p.species_name} · ${p.point_cost ?? '?'}pts` : `${slotKey} slot — empty`}
+                          >
+                            <div className="absolute inset-0 rounded border" style={{ borderColor: badge.bg, background: p ? `${badge.bg}20` : `${badge.bg}08`, opacity: p ? 1 : 0.55 }} />
+                            {p ? (
+                              <>
+                                <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" style={{ imageRendering: 'pixelated' }} />
+                                {pickNum !== undefined && (
+                                  <span className="absolute top-0 left-0 font-bold leading-none px-0.5 rounded-br" style={{ background: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: 7 }}>{pickNum}</span>
+                                )}
+                              </>
+                            ) : (
+                              <div className="flex items-center justify-center h-8">
+                                <span style={{ color: badge.bg, opacity: 0.4, fontSize: 8 }}>—</span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 text-center font-display font-bold rounded-b" style={{ background: badge.bg, color: badge.color, lineHeight: '11px', fontSize: 7, letterSpacing: '0.04em' }}>
+                              {slotKey}
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {free.map((p, i) => {
+                        const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
+                        const tBadge = p
+                          ? (p.is_mega ? TIER_DARK.Mega : (TIER_DARK[p.tier ?? ''] ?? TIER_DARK.Free))
+                          : { bg: D.border, color: D.muted }
+                        return (
+                          <div
+                            key={`free-${i}`}
+                            className="relative flex-shrink-0 rounded"
+                            style={{ width: 38, height: 46 }}
+                            title={p ? `#${pickNum ?? '?'} ${p.species_name} (free) · ${p.point_cost ?? '?'}pts` : 'Free slot'}
+                          >
+                            <div className="absolute inset-0 rounded border" style={{ borderColor: p ? tBadge.bg : D.border, background: p ? `${tBadge.bg}20` : `${D.border}08`, opacity: p ? 1 : 0.4 }} />
+                            {p ? (
+                              <>
+                                <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" style={{ imageRendering: 'pixelated' }} />
+                                {pickNum !== undefined && (
+                                  <span className="absolute top-0 left-0 font-bold leading-none px-0.5 rounded-br" style={{ background: 'rgba(0,0,0,0.75)', color: '#fff', fontSize: 7 }}>{pickNum}</span>
+                                )}
+                              </>
+                            ) : (
+                              <div className="flex items-center justify-center h-8">
+                                <span style={{ color: D.muted, opacity: 0.35, fontSize: 8 }}>—</span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 text-center font-display font-bold rounded-b" style={{ background: p ? tBadge.bg : D.border, color: p ? tBadge.color : D.muted, lineHeight: '11px', fontSize: 7, letterSpacing: '0.04em' }}>
+                              {p ? (p.tier ?? '?') : 'FREE'}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </div>
               )
             })}
-            {filtered.filter(p => !p.tier).length > 0 && (
-              <div>
-                <div className="sticky top-0 px-3 py-1 text-xs font-bold" style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>Untiered</div>
-                {filtered.filter(p => !p.tier).map(p => (
-                  <div key={p.id} className="flex items-center gap-3 px-3 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
-                    {p.species_sprite_url && <img src={p.species_sprite_url} alt={p.species_name ?? ''} className="w-10 h-10 object-contain" />}
-                    <div className="flex-1"><div className="font-medium text-sm">{p.species_name}</div></div>
-                    <div className="text-sm font-mono">{p.point_cost ?? '?'} pts</div>
-                    {canPick && (
-                      <button
-                        onClick={() => setPendingPick(p)}
-                        disabled={picking || pendingPick?.id === p.id}
-                        className="text-xs px-2 py-0.5 rounded text-white disabled:opacity-50"
-                        style={{ background: 'var(--color-primary)' }}
-                      >
-                        Pick
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
-
-        {/* Teams panel */}
-        <div className="space-y-3 overflow-y-auto" style={{ maxHeight: '70vh' }}>
-          {teams.map(team => {
-            const isCurrentPick = team.id === draftState.current_team_id && draftState.status === 'active'
-            const isNextPick = team.id === nextTeamId && team.id !== draftState.current_team_id
-            return (
-            <div
-              key={team.id}
-              className="border rounded-lg overflow-hidden"
-              style={{
-                borderColor: isCurrentPick ? 'var(--color-primary)' : 'var(--color-border)',
-                background: 'var(--color-surface)',
-                boxShadow: isCurrentPick ? '0 0 0 2px var(--color-primary)33' : 'none',
-              }}
-            >
-              {isNextPick && (
-                <div className="text-center text-xs font-black py-0.5 tracking-widest"
-                  style={{ background: '#f59e0b', color: '#1c1917' }}>
-                  NEXT PICK
-                </div>
-              )}
-              <div className="p-3">
-              <div className="flex items-center justify-between mb-2">
-                <div className="font-semibold text-sm">{team.name}</div>
-                <div className="text-xs font-mono" style={{ color: 'var(--color-primary)' }}>{team.points_remaining} pts</div>
-              </div>
-              {/* Structured slots — mirrors the Excel layout */}
-              <div className="space-y-1">
-                {/* Required slots row */}
-                <div className="flex gap-1">
-                  {(() => {
-                    const { slots, free } = assignSlots(team.id)
-                    return (
-                      <>
-                        {SLOT_ORDER.map(slotKey => {
-                          const p = slots[slotKey]
-                          const isMegaSlot = slotKey === 'Mega'
-                          const slotColor = isMegaSlot
-                            ? (p ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed') : '#7c3aed')
-                            : (TIER_COLORS[slotKey]?.label ?? '#9ca3af')
-                          const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
-                          return (
-                            <div key={slotKey} className="relative flex-shrink-0"
-                              style={{ width: 38, height: 46 }}
-                              title={p ? `#${pickNum ?? '?'} ${p.species_name} · ${p.point_cost ?? '?'}pts` : `${slotKey} slot — empty`}>
-                              <div className="absolute inset-0 rounded border"
-                                style={{
-                                  borderColor: slotColor,
-                                  background: p ? 'transparent' : 'color-mix(in srgb, var(--color-bg) 80%, transparent)',
-                                  opacity: p ? 1 : 0.6,
-                                }} />
-                              {p ? (
-                                <>
-                                  <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" />
-                                  {pickNum !== undefined && (
-                                    <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
-                                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>{pickNum}</span>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="flex items-center justify-center h-8">
-                                  <span className="text-[8px]" style={{ color: slotColor, opacity: 0.7 }}>—</span>
-                                </div>
-                              )}
-                              <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
-                                style={{ background: slotColor, color: '#fff', lineHeight: '11px' }}>
-                                {slotKey}
-                              </div>
-                            </div>
-                          )
-                        })}
-                        {/* Free slots */}
-                        {free.map((p, i) => {
-                          const pickNum = p ? picks.find(pk => pk.season_pokemon_id === p.id)?.pick_number : undefined
-                          const tColor = p
-                            ? (p.is_mega ? (MEGA_BANNER_COLORS[p.tier ?? ''] ?? '#7c3aed') : (TIER_COLORS[p.tier ?? '']?.label ?? '#9ca3af'))
-                            : '#9ca3af'
-                          return (
-                            <div key={`free-${i}`} className="relative flex-shrink-0"
-                              style={{ width: 38, height: 46 }}
-                              title={p ? `#${pickNum ?? '?'} ${p.species_name} (free pick) · ${p.point_cost ?? '?'}pts` : 'Free slot — empty'}>
-                              <div className="absolute inset-0 rounded border"
-                                style={{
-                                  borderColor: p ? tColor : 'var(--color-border)',
-                                  background: p ? 'transparent' : 'color-mix(in srgb, var(--color-bg) 80%, transparent)',
-                                  opacity: p ? 1 : 0.5,
-                                }} />
-                              {p ? (
-                                <>
-                                  <img src={p.species_sprite_url ?? ''} alt={p.species_name ?? ''} className="w-full h-8 object-contain pt-0.5" />
-                                  {pickNum !== undefined && (
-                                    <span className="absolute top-0 left-0 text-[7px] font-bold leading-none px-0.5 rounded-br"
-                                      style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}>{pickNum}</span>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="flex items-center justify-center h-8">
-                                  <span className="text-[8px]" style={{ color: 'var(--color-text-muted)', opacity: 0.5 }}>—</span>
-                                </div>
-                              )}
-                              <div className="absolute bottom-0 left-0 right-0 text-center text-[7px] font-bold rounded-b"
-                                style={{ background: p ? tColor : 'var(--color-border)', color: '#fff', lineHeight: '11px' }}>
-                                {p ? (p.tier ?? '?') : 'FREE'}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </>
-                    )
-                  })()}
-                </div>
-              </div>
-              </div>
-            </div>
-          )
-          })}
         </div>
       </div>
     </div>
